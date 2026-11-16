@@ -1,0 +1,42 @@
+{{define "content"}}
+<div class="card" style="max-width: 580px; margin: 0 auto;">
+  <div class="card-title">
+    <span>📝 Participant Registration</span>
+    <span class="badge badge-success">Code Valid</span>
+  </div>
+
+  <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; margin-bottom: 20px;">
+    <div style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Your Single-Use Code:</div>
+    <div class="code-pill" style="display: inline-block; font-size: 1.1rem; margin-top: 4px;">{{.Code}}</div>
+    {{if .Budget}}
+      <div style="margin-top: 8px; font-size: 0.95rem; color: var(--secondary);">
+        <strong>Budget limit:</strong> {{.Budget}}
+      </div>
+    {{end}}
+  </div>
+
+  <form method="POST" action="/join/{{.Code}}">
+    <div class="form-group">
+      <label for="name">Your Full Name or Nickname <span style="color: var(--primary);">*</span></label>
+      <input type="text" id="name" name="name" placeholder="e.g. Michael Scott" required autofocus value="{{.FormName}}">
+      <div class="hint">Must be unique so your Secret Santa knows exactly who you are!</div>
+    </div>
+
+    <div class="form-group">
+      <label for="email">Email Address <span style="color: var(--primary);">*</span></label>
+      <input type="email" id="email" name="email" placeholder="e.g. michael@dundermifflin.com" required value="{{.FormEmail}}">
+      <div class="hint">We'll email you who you got when the organizer rolls the Secret Santa draw.</div>
+    </div>
+
+    <div class="form-group">
+      <label for="wishlist">Wishlist & Gift Hints <span style="color: var(--text-muted);">(Optional)</span></label>
+      <textarea id="wishlist" name="wishlist" rows="3" placeholder="e.g. I love coffee mugs, cozy socks, or sci-fi books! No scented candles please.">{{.FormWishlist}}</textarea>
+      <div class="hint">Help your Secret Santa pick a gift you'll truly enjoy!</div>
+    </div>
+
+    <button type="submit" class="btn btn-primary" style="width: 100%; font-size: 1.1rem; padding: 14px;">
+      Confirm & Register for Secret Santa 🎁
+    </button>
+  </form>
+</div>
+{{end}}

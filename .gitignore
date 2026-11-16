@@ -1,0 +1,13 @@
+# Binaries
+secret-santa
+*.exe
+*.test
+
+# Local data & databases
+data/
+*.tmp
+
+# OS & Editor
+.DS_Store
+.idea/
+.vscode/

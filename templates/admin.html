@@ -1,0 +1,274 @@
+{{define "content"}}
+{{if not .IsAuthenticated}}
+  <!-- Admin Login Form -->
+  <div class="card" style="max-width: 440px; margin: 40px auto;">
+    <h2 class="card-title">🔒 Organizer Admin Login</h2>
+    <p style="color: var(--text-muted); margin-bottom: 20px;">
+      Enter the secret admin passkey to manage participants and roll the Secret Santa draw.
+    </p>
+
+    <form method="POST" action="/admin/login">
+      <div class="form-group">
+        <label for="admin_key">Admin Passkey</label>
+        <input type="password" id="admin_key" name="admin_key" required autofocus placeholder="Enter your passkey">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width: 100%;">Unlock Admin Dashboard &rarr;</button>
+    </form>
+  </div>
+{{else}}
+  <!-- Authenticated Admin Dashboard -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: gap: 12px;">
+    <div>
+      <h2 style="font-size: 1.6rem; font-weight: 800;">Organizer Control Panel</h2>
+      <p style="color: var(--text-muted);">Manage invitations, check registrations, and execute the gift draw.</p>
+    </div>
+    <div>
+      <a href="/admin/logout" class="btn btn-outline btn-sm">Log Out</a>
+    </div>
+  </div>
+
+  <!-- Stats Grid -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-value">{{.Stats.ParticipantCount}}</div>
+      <div class="stat-label">Registered Participants</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{.Stats.UnusedCodes}}</div>
+      <div class="stat-label">Unused Invites</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{.Stats.TotalCodes}}</div>
+      <div class="stat-label">Total Invites Generated</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="font-size: 1.3rem; margin-top: 8px;">
+        {{if eq .Event.Status "drawn"}}
+          <span class="badge badge-success">Drawn & Complete</span>
+        {{else}}
+          <span class="badge badge-warning">Registration Open</span>
+        {{end}}
+      </div>
+      <div class="stat-label" style="margin-top: 10px;">Event Status</div>
+    </div>
+  </div>
+
+  <!-- Draw Action Card -->
+  <div class="card" style="border: 2px solid {{if eq .Event.Status "drawn"}}#16a34a{{else}}#dc2626{{end}};">
+    <div class="card-title">
+      <span>🎲 Secret Santa Draw Action</span>
+      {{if eq .Event.Status "drawn"}}
+        <span class="badge badge-success">Draw Completed</span>
+      {{else}}
+        <span class="badge badge-warning">Pending Draw</span>
+      {{end}}
+    </div>
+
+    {{if eq .Event.Status "drawn"}}
+      <div class="alert alert-success">
+        <span>🎉</span>
+        <div>
+          <strong>The Secret Santa has been rolled!</strong>
+          Assignments are locked. Participants can reveal their match via their personal links or notification emails.
+        </div>
+      </div>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+        <form method="POST" action="/admin/resend-emails" onsubmit="return confirm('Resend notification emails to all registered participants?');">
+          <button type="submit" class="btn btn-secondary">
+            📧 Resend Match Notification Emails
+          </button>
+        </form>
+        <form method="POST" action="/admin/reset-draw" onsubmit="return confirm('WARNING: Are you sure you want to reset the draw? Current gift matches will be cleared and registration will re-open.');">
+          <button type="submit" class="btn btn-outline btn-danger">
+            🔄 Reset Draw (Re-open Registration)
+          </button>
+        </form>
+      </div>
+    {{else}}
+      <p style="color: var(--text-muted); margin-bottom: 16px;">
+        Once everyone has registered, click below to execute the draw. Our algorithm guarantees:
+      </p>
+      <ul style="color: #4b5563; margin-left: 20px; margin-bottom: 20px; line-height: 1.6;">
+        <li><strong>No self-matches:</strong> No one can draw their own name.</li>
+        <li><strong>No duplicates:</strong> Every participant gives exactly one gift and receives exactly one gift.</li>
+        <li><strong>Automatic notifications:</strong> Matches are emailed and unlocked on participants' personal links.</li>
+      </ul>
+
+      {{if lt .Stats.ParticipantCount 2}}
+        <div class="alert alert-error">
+          <span>⚠️</span>
+          <div>You need at least 2 participants (recommended 3+) registered to roll the Secret Santa draw. Currently: <strong>{{.Stats.ParticipantCount}}</strong> registered.</div>
+        </div>
+        <button class="btn btn-primary" disabled style="opacity: 0.5; cursor: not-allowed;">
+          🎲 Roll Secret Santa (Waiting for participants)
+        </button>
+      {{else}}
+        <form method="POST" action="/admin/roll" onsubmit="return confirm('Ready to roll the Secret Santa? This will assign recipients to all {{.Stats.ParticipantCount}} participants and trigger notifications.');">
+          <button type="submit" class="btn btn-primary" style="font-size: 1.15rem; padding: 14px 28px;">
+            🎲 Roll Secret Santa Now! ({{.Stats.ParticipantCount}} Participants)
+          </button>
+        </form>
+      {{end}}
+    {{end}}
+  </div>
+
+  <!-- Generate & Manage Invite Links -->
+  <div class="card">
+    <div class="card-title">
+      <span>🎟️ Invitation Links</span>
+      {{if gt .Stats.UnusedCodes 0}}
+        <button class="btn btn-outline btn-sm" onclick="copyAllUnusedLinks('.unused-link-item')">
+          📋 Copy All Unused Links
+        </button>
+      {{end}}
+    </div>
+
+    {{if ne .Event.Status "drawn"}}
+      <form method="POST" action="/admin/generate-codes" style="display: flex; gap: 12px; align-items: flex-end; margin-bottom: 24px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 180px;">
+          <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Number of Unique Invite Codes to Generate:</label>
+          <input type="number" name="count" value="5" min="1" max="100" style="margin-top: 4px;">
+        </div>
+        <button type="submit" class="btn btn-secondary">
+          ✨ Generate Invite Links
+        </button>
+      </form>
+    {{end}}
+
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Status</th>
+            <th>Claimed By</th>
+            <th>Shareable Invite Link</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .InviteCodes}}
+            <tr>
+              <td><span class="code-pill">{{.Code}}</span></td>
+              <td>
+                {{if .Used}}
+                  <span class="badge badge-neutral">Claimed</span>
+                {{else}}
+                  <span class="badge badge-success">Available</span>
+                {{end}}
+              </td>
+              <td>
+                {{if .ParticipantName}}
+                  <strong>{{.ParticipantName}}</strong>
+                {{else}}
+                  <span style="color: var(--text-muted);">&mdash;</span>
+                {{end}}
+              </td>
+              <td style="font-size: 0.85rem; font-family: monospace;">
+                <span class="{{if not .Used}}unused-link-item{{end}}" data-link="{{.InviteURL}}">{{.InviteURL}}</span>
+              </td>
+              <td>
+                <button class="btn btn-outline btn-sm" onclick="copyToClipboard('{{.InviteURL}}', this)">
+                  📋 Copy
+                </button>
+              </td>
+            </tr>
+          {{else}}
+            <tr>
+              <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                No invite codes generated yet. Generate some above!
+              </td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Registered Participants List -->
+  <div class="card">
+    <div class="card-title">
+      <span>👥 Registered Participants ({{.Stats.ParticipantCount}})</span>
+    </div>
+
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Wishlist / Hints</th>
+            {{if eq .Event.Status "drawn"}}
+              <th>Giving Gift To 🎁</th>
+              <th>Notification</th>
+            {{else}}
+              <th>Action</th>
+            {{end}}
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Participants}}
+            <tr>
+              <td><strong>{{.Name}}</strong></td>
+              <td>{{.Email}}</td>
+              <td style="max-width: 250px; font-size: 0.9rem; color: #4b5563;">
+                {{if .Wishlist}}{{.Wishlist}}{{else}}<span style="color: #9ca3af;">(none)</span>{{end}}
+              </td>
+              {{if eq $.Event.Status "drawn"}}
+                <td>
+                  <strong style="color: #15803d;">🎁 {{.ReceiverName}}</strong>
+                </td>
+                <td>
+                  {{if .EmailSent}}
+                    <span class="badge badge-success">Email Sent</span>
+                  {{else if .EmailError}}
+                    <span class="badge badge-danger" title="{{.EmailError}}">Failed</span>
+                  {{else}}
+                    <span class="badge badge-warning">Pending</span>
+                  {{end}}
+                </td>
+              {{else}}
+                <td>
+                  <form method="POST" action="/admin/delete-participant" onsubmit="return confirm('Remove {{.Name}}? Their invite code will be restored.');">
+                    <input type="hidden" name="participant_id" value="{{.ID}}">
+                    <button type="submit" class="btn btn-outline btn-danger btn-sm">Remove</button>
+                  </form>
+                </td>
+              {{end}}
+            </tr>
+          {{else}}
+            <tr>
+              <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                No participants registered yet. Share the invitation links above!
+              </td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Event Settings Form -->
+  <div class="card">
+    <div class="card-title">
+      <span>⚙️ Event Settings</span>
+    </div>
+
+    <form method="POST" action="/admin/update-event">
+      <div class="form-group">
+        <label for="title">Event Title</label>
+        <input type="text" id="title" name="title" value="{{.Event.Title}}" required>
+      </div>
+      <div class="form-group">
+        <label for="description">Event Description / Instructions</label>
+        <textarea id="description" name="description" rows="2">{{.Event.Description}}</textarea>
+      </div>
+      <div class="form-group">
+        <label for="budget">Gift Budget Limit</label>
+        <input type="text" id="budget" name="budget" value="{{.Event.Budget}}" placeholder="e.g. $25 - $30">
+      </div>
+      <button type="submit" class="btn btn-secondary">Save Event Settings</button>
+    </form>
+  </div>
+{{end}}
+{{end}}

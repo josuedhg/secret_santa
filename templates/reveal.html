@@ -1,0 +1,93 @@
+{{define "content"}}
+<div class="card" style="max-width: 620px; margin: 0 auto;">
+  {{if eq .Status "registering"}}
+    <div style="text-align: center; padding: 20px 0;">
+      <div style="font-size: 52px; margin-bottom: 12px;">🎉</div>
+      <h2 style="font-size: 1.8rem; color: var(--secondary); margin-bottom: 8px;">You're Registered, {{.Participant.Name}}!</h2>
+      <p style="color: var(--text-muted); font-size: 1.05rem; margin-bottom: 24px;">
+        Your spot in the Secret Santa exchange is confirmed.
+      </p>
+
+      <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 18px; text-align: left; margin-bottom: 24px;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+          <span style="color: var(--text-muted);">Registered Name:</span>
+          <strong>{{.Participant.Name}}</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+          <span style="color: var(--text-muted);">Notification Email:</span>
+          <strong>{{.Participant.Email}}</strong>
+        </div>
+        {{if .Participant.Wishlist}}
+          <div style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px;">
+            <span style="color: var(--text-muted); font-size: 0.9rem;">Your Wishlist / Hints:</span>
+            <div style="font-style: italic; color: #334155; margin-top: 4px;">"{{.Participant.Wishlist}}"</div>
+          </div>
+        {{end}}
+      </div>
+
+      <div class="alert alert-info" style="text-align: left;">
+        <span>⏳</span>
+        <div>
+          <strong>Waiting for Draw:</strong>
+          The organizer is still collecting participants. As soon as the Secret Santa is rolled, you will receive an email and this page will show who you get!
+        </div>
+      </div>
+
+      <div style="margin-top: 20px;">
+        <button class="btn btn-outline btn-sm" onclick="copyToClipboard(window.location.href, this)">
+          📋 Copy Your Personal Secret Link
+        </button>
+      </div>
+    </div>
+  {{else}}
+    <!-- Draw is completed -->
+    <div class="reveal-wrapper">
+      <div style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 600;">
+        Secret Santa for: {{.Participant.Name}}
+      </div>
+
+      <div id="giftBoxBtn" class="gift-box-container" onclick="unwrapGift()">
+        <button class="gift-box-btn">
+          <span class="gift-box-icon">🎁</span>
+          <span>Click to Unwrap Your Match!</span>
+          <span style="font-size: 0.85rem; font-weight: normal; opacity: 0.9;">Tap to reveal who you are giving a gift to</span>
+        </button>
+      </div>
+
+      <div id="revealResult" class="revealed-content" style="display: none;">
+        <div style="font-size: 0.95rem; text-transform: uppercase; letter-spacing: 1.5px; color: #166534; font-weight: 700;">
+          🎅 You are Secret Santa for 🎅
+        </div>
+        <div class="receiver-name">{{.Receiver.Name}}</div>
+
+        {{if .Receiver.Wishlist}}
+          <div style="background: #ffffff; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; margin: 18px 0; text-align: left;">
+            <div style="font-size: 0.85rem; font-weight: 700; color: #166534; margin-bottom: 4px;">
+              🎁 {{.Receiver.Name}}'s Wishlist & Gift Hints:
+            </div>
+            <div style="color: #374151; font-size: 0.95rem;">
+              {{.Receiver.Wishlist}}
+            </div>
+          </div>
+        {{end}}
+
+        {{if .Budget}}
+          <div style="font-size: 0.9rem; color: #4b5563; margin-top: 10px;">
+            <strong>Budget:</strong> {{.Budget}}
+          </div>
+        {{end}}
+
+        <div style="margin-top: 20px; padding: 12px; background: #fef2f2; border-radius: 8px; color: #991b1b; font-size: 0.9rem; font-weight: 600;">
+          🤫 Keep it a secret! Don't let {{.Receiver.Name}} know you drew them!
+        </div>
+      </div>
+
+      <div style="margin-top: 24px;">
+        <button class="btn btn-outline btn-sm" onclick="copyToClipboard(window.location.href, this)">
+          📋 Bookmark / Copy This Link
+        </button>
+      </div>
+    </div>
+  {{end}}
+</div>
+{{end}}
