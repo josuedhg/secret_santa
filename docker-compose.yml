@@ -1,0 +1,14 @@
+services:
+  intercambio:
+    build: .
+    container_name: intercambio-app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - BASE_URL=https://intercambio.tudominio.com # Cambia por tu dominio o IP pública
+      - DATA_PATH=/app/data/secretsanta.json
+      - ADMIN_KEY=mi-clave-super-secreta-2026      # Define tu clave aquí o déjala vacía para auto-generar
+    volumes:
+      - ./data:/app/data

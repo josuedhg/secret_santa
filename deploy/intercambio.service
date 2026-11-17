@@ -1,0 +1,21 @@
+[Unit]
+Description=Aplicacion de Intercambio de Regalos
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/intercambio
+ExecStart=/var/www/intercambio/intercambio
+Restart=always
+RestartSec=5
+
+# Variables de entorno
+Environment="PORT=8080"
+Environment="BASE_URL=https://intercambio.tudominio.com"
+Environment="DATA_PATH=/var/www/intercambio/data/secretsanta.json"
+Environment="ADMIN_KEY=clave-secreta-del-organizador"
+
+[Install]
+WantedBy=multi-user.target
