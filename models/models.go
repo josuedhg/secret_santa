@@ -26,9 +26,18 @@ type Participant struct {
 	Name         string    `json:"name"`
 	Wishlist     string    `json:"wishlist,omitempty"`
 	InviteCode   string    `json:"invite_code"`
-	SessionToken string    `json:"session_token"` // Used to keep the participant logged in via session cookie
+	FamilyID     string    `json:"family_id"`               // Grupo familiar / núcleo del hogar
+	FamilyName   string    `json:"family_name,omitempty"`    // Nombre de referencia familiar
+	IsHead       bool      `json:"is_head"`                  // True si es el titular del enlace de invitación
+	SessionToken string    `json:"session_token,omitempty"`  // Token de sesión en navegador del titular
 	RegisteredAt time.Time `json:"registered_at"`
-	ReceiverID   string    `json:"receiver_id,omitempty"` // ID of the person they need to give a gift to
+	ReceiverID   string    `json:"receiver_id,omitempty"`   // ID de la persona a quien le da regalo
+}
+
+// FamilyMemberInput is used when adding family members
+type FamilyMemberInput struct {
+	Name     string `json:"name"`
+	Wishlist string `json:"wishlist,omitempty"`
 }
 
 // Event holds the overall Secret Santa event configuration and state

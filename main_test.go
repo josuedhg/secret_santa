@@ -13,6 +13,7 @@ import (
 
 	"secret_santa/config"
 	"secret_santa/handlers"
+	"secret_santa/models"
 	"secret_santa/storage"
 )
 
@@ -244,5 +245,145 @@ func TestEndToEndSessionFlow(t *testing.T) {
 	receiver, _ := store.GetParticipant(pAlicia.ReceiverID)
 	if !strings.Contains(body, receiver.Name) {
 		t.Fatalf("se esperaba que la página de Alicia contuviera el nombre de su destinatario %s", receiver.Name)
+	}
+}
+
+func TestEndToEndFamilyMembersFlow(t *testing.T) {
+	_, store, mux, tmpDir := setupTestServer(t)
+	defer os.RemoveAll(tmpDir)
+
+	// 1. Generar 2 códigos de invitación
+	codes, err := store.GenerateInviteCodes(2)
+	if err != nil {
+		t.Fatalf("error al generar códigos: %v", err)
+	}
+	code1 := codes[0].Code
+	code2 := codes[1].Code
+
+	// 2. Registrar a Carlos con su hijo Leo en un solo formulario
+	form := url.Values{}
+	form.Set("name", "Carlos Pérez")
+	form.Set("wishlist", "Café molido")
+	form.Add("family_name[]", "Leo Pérez")
+	form.Add("family_wishlist[]", "Carritos de juguete")
+
+	req := httptest.NewRequest("POST", "/join/"+code1, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("error en registro de Carlos: %d", rec.Code)
+	}
+
+	var carlosCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "intercambio_session" {
+			carlosCookie = c
+			break
+		}
+	}
+	if carlosCookie == nil {
+		t.Fatal("no se generó cookie para Carlos")
+	}
+
+	// 3. Registrar a Marta y su hija Sara con code2
+	form = url.Values{}
+	form.Set("name", "Marta López")
+	form.Set("wishlist", "Libros de misterio")
+	form.Add("family_name[]", "Sara López")
+	form.Add("family_wishlist[]", "Pinturas acuarela")
+
+	req = httptest.NewRequest("POST", "/join/"+code2, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("error en registro de Marta: %d", rec.Code)
+	}
+
+	// 4. Agregar otro miembro a la familia de Carlos usando /family/add
+	form = url.Values{}
+	form.Set("name", "Elena Pérez")
+	form.Set("wishlist", "Muñecas")
+	req = httptest.NewRequest("POST", "/family/add", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(carlosCookie)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("error al agregar a Elena: %d", rec.Code)
+	}
+
+	// Ahora hay 5 participantes: 3 de Pérez (Carlos, Leo, Elena) y 2 de López (Marta, Sara).
+	// La familia Pérez tiene 3 de 5 (> 50%).
+	// Intentar sortear: debe fallar con error explicativo!
+	adminReq := httptest.NewRequest("POST", "/admin/roll?key=clave-secreta-organizador", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, adminReq)
+	if !strings.Contains(rec.Header().Get("Location"), "demasiados+integrantes") && !strings.Contains(rec.Header().Get("Location"), "mitad") {
+		t.Fatalf("se esperaba error de restricción familiar por superar el 50%%, loc: %s", rec.Header().Get("Location"))
+	}
+
+	// 5. Eliminar a Elena usando /family/delete
+	allP := store.ListParticipants()
+	var elenaID string
+	for _, p := range allP {
+		if p.Name == "Elena Pérez" {
+			elenaID = p.ID
+			break
+		}
+	}
+	if elenaID == "" {
+		t.Fatal("no se encontró a Elena en los participantes")
+	}
+
+	delForm := url.Values{}
+	delForm.Set("member_id", elenaID)
+	req = httptest.NewRequest("POST", "/family/delete", strings.NewReader(delForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(carlosCookie)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("falló eliminación de Elena: %d", rec.Code)
+	}
+
+	// 6. Ahora hay 4 participantes (2 de Pérez, 2 de López). El sorteo debe ser exitoso!
+	adminReq = httptest.NewRequest("POST", "/admin/roll?key=clave-secreta-organizador", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, adminReq)
+	if !strings.Contains(rec.Header().Get("Location"), "success") {
+		t.Fatalf("el sorteo debió tener éxito con 4 participantes balanceados, loc: %s", rec.Header().Get("Location"))
+	}
+
+	// 7. Verificar que NO hay regalos intrafamiliares
+	participants := store.ListParticipants()
+	pMap := make(map[string]models.Participant)
+	for _, p := range participants {
+		pMap[p.ID] = p
+	}
+
+	for _, p := range participants {
+		receiver := pMap[p.ReceiverID]
+		if p.FamilyID == receiver.FamilyID {
+			t.Fatalf("¡VIOLACIÓN DE REGLA FAMILIAR! %s y %s pertenecen a la misma familia %s", p.Name, receiver.Name, p.FamilyID)
+		}
+	}
+
+	// 8. Revisar vista /reveal de Carlos: debe mostrar pestañas para Carlos y Leo
+	req = httptest.NewRequest("GET", "/reveal", nil)
+	req.AddCookie(carlosCookie)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200 OK para reveal, obtenido %d", rec.Code)
+	}
+
+	revealBody := rec.Body.String()
+	if !strings.Contains(revealBody, "Carlos Pérez") || !strings.Contains(revealBody, "Leo Pérez") {
+		t.Fatal("se esperaba ver a Carlos y a su hijo Leo en la página de revelación familiar")
+	}
+	if !strings.Contains(revealBody, "family-tab-btn") {
+		t.Fatal("se esperaba encontrar botones de pestañas familiares en el HTML")
 	}
 }

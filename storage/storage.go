@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -18,12 +19,12 @@ import (
 
 var (
 	ErrCodeNotFound        = errors.New("código de invitación no encontrado")
-	ErrCodeAlreadyUsed      = errors.New("este código de invitación ya ha sido utilizado")
+	ErrCodeAlreadyUsed     = errors.New("este código de invitación ya ha sido utilizado")
 	ErrRegistrationClosed  = errors.New("el registro está cerrado porque el sorteo ya se realizó")
 	ErrNameRequired        = errors.New("el nombre no puede estar vacío")
 	ErrNameTaken           = errors.New("este nombre ya ha sido registrado por otro participante")
-	ErrParticipantNotFound  = errors.New("participante no encontrado")
-	ErrCannotDeleteDrawn    = errors.New("no se pueden eliminar participantes después de realizado el sorteo")
+	ErrParticipantNotFound = errors.New("participante no encontrado")
+	ErrCannotDeleteDrawn   = errors.New("no se pueden eliminar participantes después de realizado el sorteo")
 )
 
 type Store struct {
@@ -200,7 +201,7 @@ func (s *Store) ListInviteCodes() []models.InviteCode {
 	return result
 }
 
-// RegisterParticipant claims an invite code and registers a new participant
+// RegisterParticipant claims an invite code and registers a new titular participant
 func (s *Store) RegisterParticipant(code, name, wishlist string) (*models.Participant, error) {
 	cleanCode := strings.ToUpper(strings.TrimSpace(code))
 	cleanName := strings.TrimSpace(name)
@@ -240,6 +241,9 @@ func (s *Store) RegisterParticipant(code, name, wishlist string) (*models.Partic
 		Name:         cleanName,
 		Wishlist:     cleanWishlist,
 		InviteCode:   cleanCode,
+		FamilyID:     pID,
+		FamilyName:   cleanName,
+		IsHead:       true,
 		SessionToken: sessionToken,
 		RegisteredAt: time.Now(),
 	}
@@ -256,6 +260,131 @@ func (s *Store) RegisterParticipant(code, name, wishlist string) (*models.Partic
 	return &participant, nil
 }
 
+// AddFamilyMember registers an additional participant under the same family group and invite code
+func (s *Store) AddFamilyMember(headID, name, wishlist string) (*models.Participant, error) {
+	cleanName := strings.TrimSpace(name)
+	cleanWishlist := strings.TrimSpace(wishlist)
+
+	if cleanName == "" {
+		return nil, ErrNameRequired
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.state.Event.Status == models.StatusDrawn {
+		return nil, ErrRegistrationClosed
+	}
+
+	head, exists := s.state.Participants[headID]
+	if !exists {
+		return nil, ErrParticipantNotFound
+	}
+
+	// Regla: No se permiten nombres duplicados en el evento
+	for _, p := range s.state.Participants {
+		if strings.EqualFold(p.Name, cleanName) {
+			return nil, fmt.Errorf("%w: '%s'", ErrNameTaken, cleanName)
+		}
+	}
+
+	mID := GenerateID()
+	familyID := head.FamilyID
+	if familyID == "" {
+		familyID = head.ID
+	}
+	familyName := head.FamilyName
+	if familyName == "" {
+		familyName = head.Name
+	}
+
+	member := models.Participant{
+		ID:           mID,
+		Name:         cleanName,
+		Wishlist:     cleanWishlist,
+		InviteCode:   head.InviteCode,
+		FamilyID:     familyID,
+		FamilyName:   familyName,
+		IsHead:       false,
+		SessionToken: head.SessionToken,
+		RegisteredAt: time.Now(),
+	}
+
+	s.state.Participants[mID] = member
+
+	if err := s.saveLocked(); err != nil {
+		return nil, err
+	}
+
+	return &member, nil
+}
+
+// GetFamilyMembers returns all participants belonging to a specific family ID
+func (s *Store) GetFamilyMembers(familyID string) []models.Participant {
+	if familyID == "" {
+		return nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var members []models.Participant
+	for _, p := range s.state.Participants {
+		pFamily := p.FamilyID
+		if pFamily == "" {
+			pFamily = p.ID
+		}
+		if pFamily == familyID {
+			members = append(members, p)
+		}
+	}
+
+	sort.Slice(members, func(i, j int) bool {
+		if members[i].IsHead != members[j].IsHead {
+			return members[i].IsHead // Head first
+		}
+		return members[i].RegisteredAt.Before(members[j].RegisteredAt)
+	})
+
+	return members
+}
+
+// DeleteFamilyMember removes a non-head family member before the draw
+func (s *Store) DeleteFamilyMember(headID, memberID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.state.Event.Status == models.StatusDrawn {
+		return ErrCannotDeleteDrawn
+	}
+
+	head, exists := s.state.Participants[headID]
+	if !exists {
+		return ErrParticipantNotFound
+	}
+
+	member, exists := s.state.Participants[memberID]
+	if !exists {
+		return ErrParticipantNotFound
+	}
+
+	headFam := head.FamilyID
+	if headFam == "" {
+		headFam = head.ID
+	}
+	memberFam := member.FamilyID
+	if memberFam == "" {
+		memberFam = member.ID
+	}
+
+	if headFam != memberFam || member.IsHead {
+		return errors.New("no autorizado para eliminar este participante")
+	}
+
+	delete(s.state.Participants, memberID)
+	return s.saveLocked()
+}
+
 // GetParticipant looks up a participant by ID
 func (s *Store) GetParticipant(id string) (models.Participant, bool) {
 	s.mu.RLock()
@@ -265,21 +394,30 @@ func (s *Store) GetParticipant(id string) (models.Participant, bool) {
 	return p, exists
 }
 
-// GetParticipantByCode finds the participant who redeemed this code
+// GetParticipantByCode finds the titular participant who redeemed this code
 func (s *Store) GetParticipantByCode(code string) (models.Participant, bool) {
 	cleanCode := strings.ToUpper(strings.TrimSpace(code))
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	var fallback models.Participant
+	foundFallback := false
+
 	for _, p := range s.state.Participants {
 		if p.InviteCode == cleanCode {
-			return p, true
+			if p.IsHead {
+				return p, true
+			}
+			if !foundFallback {
+				fallback = p
+				foundFallback = true
+			}
 		}
 	}
-	return models.Participant{}, false
+	return fallback, foundFallback
 }
 
-// GetParticipantBySession finds the participant associated with a session cookie
+// GetParticipantBySession finds the primary participant associated with a session cookie
 func (s *Store) GetParticipantBySession(sessionToken string) (models.Participant, bool) {
 	if sessionToken == "" {
 		return models.Participant{}, false
@@ -287,12 +425,21 @@ func (s *Store) GetParticipantBySession(sessionToken string) (models.Participant
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	var fallback models.Participant
+	foundFallback := false
+
 	for _, p := range s.state.Participants {
 		if p.SessionToken == sessionToken {
-			return p, true
+			if p.IsHead {
+				return p, true
+			}
+			if !foundFallback {
+				fallback = p
+				foundFallback = true
+			}
 		}
 	}
-	return models.Participant{}, false
+	return fallback, foundFallback
 }
 
 // ListParticipants returns all registered participants
@@ -307,7 +454,9 @@ func (s *Store) ListParticipants() []models.Participant {
 	return result
 }
 
-// DeleteParticipant removes a participant before the draw and frees up their invite code
+// DeleteParticipant removes a participant before the draw.
+// If the participant is the head of a family, it deletes all family members and frees up their invite code.
+// If the participant is an extra family member, only that member is removed.
 func (s *Store) DeleteParticipant(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -321,14 +470,35 @@ func (s *Store) DeleteParticipant(id string) error {
 		return ErrParticipantNotFound
 	}
 
-	// Liberar el código de invitación
-	if inv, ok := s.state.InviteCodes[p.InviteCode]; ok {
-		inv.Used = false
-		inv.ParticipantID = ""
-		s.state.InviteCodes[p.InviteCode] = inv
+	// Si es el titular (o el único con ese código):
+	if p.IsHead || p.FamilyID == "" || p.FamilyID == p.ID {
+		familyID := p.FamilyID
+		if familyID == "" {
+			familyID = p.ID
+		}
+
+		// Eliminar todos los miembros de este núcleo familiar
+		for otherID, otherP := range s.state.Participants {
+			otherFam := otherP.FamilyID
+			if otherFam == "" {
+				otherFam = otherP.ID
+			}
+			if otherFam == familyID {
+				delete(s.state.Participants, otherID)
+			}
+		}
+
+		// Liberar el código de invitación
+		if inv, ok := s.state.InviteCodes[p.InviteCode]; ok {
+			inv.Used = false
+			inv.ParticipantID = ""
+			s.state.InviteCodes[p.InviteCode] = inv
+		}
+	} else {
+		// Solo es un familiar adicional: eliminarlo individualmente
+		delete(s.state.Participants, id)
 	}
 
-	delete(s.state.Participants, id)
 	return s.saveLocked()
 }
 

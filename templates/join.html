@@ -1,5 +1,5 @@
 {{define "content"}}
-<div class="card" style="max-width: 540px; margin: 0 auto;">
+<div class="card" style="max-width: 580px; margin: 0 auto;">
   <div class="card-title">
     <span>📝 Unirse al Intercambio</span>
     <span class="badge badge-success">Código Válido</span>
@@ -15,17 +15,36 @@
     {{end}}
   </div>
 
-  <form method="POST" action="/join/{{.Code}}">
+  <form method="POST" action="/join/{{.Code}}" id="joinForm">
     <div class="form-group">
-      <label for="name">Tu Nombre o Apodo <span style="color: var(--primary);">*</span></label>
+      <label for="name">Tu Nombre o Apodo (Titular) <span style="color: var(--primary);">*</span></label>
       <input type="text" id="name" name="name" placeholder="ej. María González" required autofocus value="{{.FormName}}">
       <div class="hint">Los nombres no se pueden duplicar para que todos sepan exactamente quién eres.</div>
     </div>
 
     <div class="form-group">
-      <label for="wishlist">Ideas de Regalo y Preferencias <span style="color: var(--text-muted);">(Opcional)</span></label>
-      <textarea id="wishlist" name="wishlist" rows="3" placeholder="ej. Me gusta el café de grano, los calcetines abrigadores, libros de misterio o plantas.">{{.FormWishlist}}</textarea>
+      <label for="wishlist">Tus Ideas de Regalo y Preferencias <span style="color: var(--text-muted);">(Opcional)</span></label>
+      <textarea id="wishlist" name="wishlist" rows="2" placeholder="ej. Café de grano, calcetines abrigadores, libros o plantas.">{{.FormWishlist}}</textarea>
       <div class="hint">Dale una pista a la persona que te regala sobre qué cosas te gustan.</div>
+    </div>
+
+    <!-- Sección Opcional de Familiares / Hijos -->
+    <div style="background: #fdfaf6; border: 1px solid #fed7aa; border-radius: 8px; padding: 16px; margin: 24px 0;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <label style="font-size: 1rem; font-weight: 700; color: #9a3412; margin: 0;">
+          👨‍👩‍👧‍👦 ¿Deseas agregar integrantes de tu familia?
+        </label>
+      </div>
+      <p style="font-size: 0.88rem; color: #7c2d12; margin-bottom: 12px; line-height: 1.4;">
+        Si tienes hijos o familiares en casa que participarán y prefieres gestionarlos desde tu dispositivo, puedes agregarlos aquí con tu mismo enlace.
+        <strong>✨ Regla del intercambio: El sistema garantiza que no se regalarán entre ustedes.</strong>
+      </p>
+
+      <div id="familyMembersContainer"></div>
+
+      <button type="button" class="btn btn-outline btn-sm" id="btnAddFamilyMember" style="border-color: #ea580c; color: #ea580c; margin-top: 8px;">
+        ➕ Agregar Hijo / Familiar
+      </button>
     </div>
 
     <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px; margin-bottom: 20px; font-size: 0.88rem; color: #166534;">
@@ -37,4 +56,38 @@
     </button>
   </form>
 </div>
+
+<template id="familyMemberTemplate">
+  <div class="family-member-row" style="background: #ffffff; border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; position: relative;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <span style="font-size: 0.85rem; font-weight: 700; color: var(--secondary);">Familiar Adicional:</span>
+      <button type="button" class="btn btn-outline btn-danger btn-sm btn-remove-member" style="padding: 2px 8px; font-size: 0.75rem;">✖ Quitar</button>
+    </div>
+    <div class="form-group" style="margin-bottom: 8px;">
+      <input type="text" name="family_name[]" placeholder="Nombre del familiar (ej. Lucas González)" required style="font-size: 0.95rem;">
+    </div>
+    <div class="form-group" style="margin-bottom: 0;">
+      <input type="text" name="family_wishlist[]" placeholder="Ideas de regalo (ej. Legos, carritos, muñecas)" style="font-size: 0.9rem;">
+    </div>
+  </div>
+</template>
+
+<script>
+  (function() {
+    var addBtn = document.getElementById('btnAddFamilyMember');
+    var container = document.getElementById('familyMembersContainer');
+    var tmpl = document.getElementById('familyMemberTemplate');
+
+    if (addBtn && container && tmpl) {
+      addBtn.addEventListener('click', function() {
+        var clone = tmpl.content.cloneNode(true);
+        var removeBtn = clone.querySelector('.btn-remove-member');
+        removeBtn.addEventListener('click', function(e) {
+          e.target.closest('.family-member-row').remove();
+        });
+        container.appendChild(clone);
+      });
+    }
+  })();
+</script>
 {{end}}

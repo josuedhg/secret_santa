@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strings"
 
 	"secret_santa/models"
@@ -14,6 +15,8 @@ var (
 	ErrNotEnoughParticipants = errors.New("se requieren al menos 2 participantes para realizar el intercambio (recomendado 3+)")
 	ErrDuplicateNames        = errors.New("no se puede realizar el sorteo con nombres duplicados")
 	ErrAlreadyDrawn          = errors.New("el intercambio ya ha sido sorteado")
+	ErrFamilyTooLarge        = errors.New("un grupo familiar tiene demasiados integrantes para realizar el sorteo")
+	ErrNoValidAssignment     = errors.New("no fue posible encontrar una asignación que respete todas las restricciones familiares")
 )
 
 // CryptoRandInt returns a secure random integer in [0, max)
@@ -41,10 +44,19 @@ func ShuffleCrypto[T any](items []T) error {
 	return nil
 }
 
+// effectiveFamilyID returns the family ID or the participant ID if no family ID is set
+func effectiveFamilyID(p models.Participant) string {
+	if strings.TrimSpace(p.FamilyID) != "" {
+		return strings.TrimSpace(p.FamilyID)
+	}
+	return p.ID
+}
+
 // PerformDraw assigns each participant a unique receiver following the Intercambio rules:
 // 1. Nadie puede autoregalarse (no self-assignments).
 // 2. Los nombres no pueden estar duplicados.
-// 3. Cada persona da exactamente un regalo y recibe exactamente un regalo (ciclo hamiltoniano único).
+// 3. Ningún participante puede regalarle a un integrante de su propia familia.
+// 4. Cada persona da exactamente un regalo y recibe exactamente un regalo (biyección perfecta).
 func PerformDraw(participants []models.Participant) (map[string]string, error) {
 	n := len(participants)
 	if n < 2 {
@@ -55,53 +67,157 @@ func PerformDraw(participants []models.Participant) (map[string]string, error) {
 	seenNames := make(map[string]bool)
 	for _, p := range participants {
 		cleanName := strings.ToLower(strings.TrimSpace(p.Name))
+		if cleanName == "" {
+			return nil, errors.New("hay participantes con el nombre vacío")
+		}
 		if seenNames[cleanName] {
 			return nil, fmt.Errorf("%w: '%s'", ErrDuplicateNames, p.Name)
 		}
 		seenNames[cleanName] = true
 	}
 
-	// Extraer IDs de los participantes
-	ids := make([]string, n)
-	for i, p := range participants {
-		ids[i] = p.ID
+	// Contar integrantes por familia y verificar condición de posibilidad (Pigeonhole principle)
+	familyCounts := make(map[string]int)
+	familyNameMap := make(map[string]string)
+	for _, p := range participants {
+		fID := effectiveFamilyID(p)
+		familyCounts[fID]++
+		if p.FamilyName != "" {
+			familyNameMap[fID] = p.FamilyName
+		} else if familyNameMap[fID] == "" {
+			familyNameMap[fID] = p.Name
+		}
 	}
 
-	// Barajar con crypto/rand
-	shuffled := make([]string, n)
-	copy(shuffled, ids)
-	if err := ShuffleCrypto(shuffled); err != nil {
-		return nil, fmt.Errorf("error al barajar participantes: %w", err)
+	for fID, count := range familyCounts {
+		if count*2 > n {
+			fName := familyNameMap[fID]
+			return nil, fmt.Errorf("%w: la familia '%s' tiene %d de %d participantes. Ninguna familia puede superar la mitad del total de participantes para evitar regalos entre familiares", ErrFamilyTooLarge, fName, count, n)
+		}
 	}
 
-	// Asignación mediante ciclo hamiltoniano:
-	// shuffled[0] -> shuffled[1] -> ... -> shuffled[n-1] -> shuffled[0]
-	// Esto garantiza:
-	// 1. Para todo i, receptor != emisor (ya que n >= 2 y (i+1)%n != i)
-	// 2. Cada participante da exactamente un regalo
-	// 3. Cada participante recibe exactamente un regalo
-	// 4. Se evitan intercambios cerrados de 2 personas cuando n >= 3
-	assignments := make(map[string]string, n)
-	for i := 0; i < n; i++ {
-		giverID := shuffled[i]
-		receiverID := shuffled[(i+1)%n]
-		assignments[giverID] = receiverID
+	// Intentar resolver la asignación con backtracking aleatorizado
+	// Realizamos varios intentos si fuese necesario por aleatoriedad
+	const maxAttempts = 50
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		assignments := solveDraw(participants, familyCounts)
+		if assignments != nil {
+			// Verificación de integridad rigurosa
+			if err := verifyDraw(participants, assignments); err == nil {
+				return assignments, nil
+			}
+		}
 	}
 
-	// Verificación de integridad
-	receivedCount := make(map[string]int, n)
+	return nil, ErrNoValidAssignment
+}
+
+func solveDraw(participants []models.Participant, familyCounts map[string]int) map[string]string {
+	n := len(participants)
+	givers := make([]models.Participant, n)
+	copy(givers, participants)
+
+	// Heurística MRV: ordenar givers por el tamaño de su familia descendente
+	// (los que tienen familias más grandes tienen menos receptores posibles y deben asignarse primero)
+	sort.SliceStable(givers, func(i, j int) bool {
+		fI := effectiveFamilyID(givers[i])
+		fJ := effectiveFamilyID(givers[j])
+		return familyCounts[fI] > familyCounts[fJ]
+	})
+
+	assignedReceivers := make(map[string]bool, n)
+	result := make(map[string]string, n)
+
+	if backtrack(0, givers, participants, assignedReceivers, result) {
+		return result
+	}
+
+	return nil
+}
+
+func backtrack(index int, givers []models.Participant, allParticipants []models.Participant, assignedReceivers map[string]bool, result map[string]string) bool {
+	if index == len(givers) {
+		return true
+	}
+
+	giver := givers[index]
+	giverFamily := effectiveFamilyID(giver)
+
+	// Filtrar receptores candidatos válidos para este giver
+	var candidates []models.Participant
+	for _, candidate := range allParticipants {
+		if assignedReceivers[candidate.ID] {
+			continue
+		}
+		if candidate.ID == giver.ID {
+			continue // No autoregalo
+		}
+		if effectiveFamilyID(candidate) == giverFamily {
+			continue // No regalo entre familiares
+		}
+		candidates = append(candidates, candidate)
+	}
+
+	if len(candidates) == 0 {
+		return false
+	}
+
+	// Barajar candidatos aleatoriamente para garantizar equidad y dinamismo
+	_ = ShuffleCrypto(candidates)
+
+	for _, cand := range candidates {
+		assignedReceivers[cand.ID] = true
+		result[giver.ID] = cand.ID
+
+		if backtrack(index+1, givers, allParticipants, assignedReceivers, result) {
+			return true
+		}
+
+		delete(result, giver.ID)
+		delete(assignedReceivers, cand.ID)
+	}
+
+	return false
+}
+
+func verifyDraw(participants []models.Participant, assignments map[string]string) error {
+	n := len(participants)
+	if len(assignments) != n {
+		return fmt.Errorf("número de asignaciones inválido: %d de %d", len(assignments), n)
+	}
+
+	pMap := make(map[string]models.Participant, n)
+	for _, p := range participants {
+		pMap[p.ID] = p
+	}
+
+	receivedCounts := make(map[string]int, n)
 	for giverID, receiverID := range assignments {
+		giver, okG := pMap[giverID]
+		receiver, okR := pMap[receiverID]
+		if !okG || !okR {
+			return fmt.Errorf("participante desconocido en asignación: %s -> %s", giverID, receiverID)
+		}
+
+		// Regla 1: No autoregalo
 		if giverID == receiverID {
-			return nil, fmt.Errorf("se detectó autoasignación para el participante %s", giverID)
+			return fmt.Errorf("autoasignación detectada para %s", giver.Name)
 		}
-		receivedCount[receiverID]++
+
+		// Regla 3: No regalos entre integrantes de la misma familia
+		if effectiveFamilyID(giver) == effectiveFamilyID(receiver) {
+			return fmt.Errorf("violación de regla familiar: %s y %s pertenecen al mismo grupo familiar", giver.Name, receiver.Name)
+		}
+
+		receivedCounts[receiverID]++
 	}
 
-	for _, id := range ids {
-		if receivedCount[id] != 1 {
-			return nil, fmt.Errorf("el participante %s recibió %d regalos en lugar de 1", id, receivedCount[id])
+	// Regla 4: Cada persona recibe exactamente un regalo
+	for _, p := range participants {
+		if receivedCounts[p.ID] != 1 {
+			return fmt.Errorf("participante %s recibió %d regalos (se esperaba 1)", p.Name, receivedCounts[p.ID])
 		}
 	}
 
-	return assignments, nil
+	return nil
 }

@@ -44,6 +44,9 @@ func TestStoreFlow(t *testing.T) {
 	if p1.SessionToken == "" {
 		t.Fatal("expected non-empty SessionToken")
 	}
+	if !p1.IsHead {
+		t.Fatal("expected IsHead=true for titular")
+	}
 
 	// Verify session lookup
 	bySession, ok := store.GetParticipantBySession(p1.SessionToken)
@@ -108,5 +111,85 @@ func TestStoreFlow(t *testing.T) {
 	}
 	if reloadedP1.ReceiverID != p2.ID {
 		t.Fatalf("expected receiver %s, got %s", p2.ID, reloadedP1.ReceiverID)
+	}
+}
+
+func TestStore_FamilyMembers(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "intercambio_fam_test_*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "test_fam.json")
+	store, err := NewStore(dbPath, "test-admin-key")
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	codes, _ := store.GenerateInviteCodes(2)
+	head, err := store.RegisterParticipant(codes[0].Code, "Mamá Laura", "Plantas")
+	if err != nil {
+		t.Fatalf("failed to register head: %v", err)
+	}
+
+	// Add child 1
+	kid1, err := store.AddFamilyMember(head.ID, "Lucas (Hijo)", "Lego Star Wars")
+	if err != nil {
+		t.Fatalf("failed to add kid1: %v", err)
+	}
+	if kid1.FamilyID != head.FamilyID {
+		t.Fatalf("expected same FamilyID %s, got %s", head.FamilyID, kid1.FamilyID)
+	}
+	if kid1.IsHead {
+		t.Fatal("expected IsHead=false for family member")
+	}
+
+	// Add child 2
+	kid2, err := store.AddFamilyMember(head.ID, "Sofía (Hija)", "Pinturas al óleo")
+	if err != nil {
+		t.Fatalf("failed to add kid2: %v", err)
+	}
+
+	// Duplicate name check for family member
+	_, err = store.AddFamilyMember(head.ID, "lucas (hijo)", "")
+	if err == nil {
+		t.Fatal("expected error for duplicate family member name")
+	}
+
+	// Get family members
+	fam := store.GetFamilyMembers(head.FamilyID)
+	if len(fam) != 3 {
+		t.Fatalf("expected 3 family members, got %d", len(fam))
+	}
+	if fam[0].ID != head.ID {
+		t.Fatalf("expected head to be first, got %s", fam[0].Name)
+	}
+
+	// Delete one child
+	err = store.DeleteFamilyMember(head.ID, kid2.ID)
+	if err != nil {
+		t.Fatalf("failed to delete kid2: %v", err)
+	}
+
+	famAfterDel := store.GetFamilyMembers(head.FamilyID)
+	if len(famAfterDel) != 2 {
+		t.Fatalf("expected 2 family members after delete, got %d", len(famAfterDel))
+	}
+
+	// Delete head: should delete entire family and free invite code
+	err = store.DeleteParticipant(head.ID)
+	if err != nil {
+		t.Fatalf("failed to delete head: %v", err)
+	}
+
+	allP := store.ListParticipants()
+	if len(allP) != 0 {
+		t.Fatalf("expected 0 participants after deleting head, got %d", len(allP))
+	}
+
+	inv, _ := store.GetInviteCode(codes[0].Code)
+	if inv.Used {
+		t.Fatal("expected invite code to be freed (Used=false)")
 	}
 }

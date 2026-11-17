@@ -86,6 +86,7 @@
       </p>
       <ul style="color: #4b5563; margin-left: 20px; margin-bottom: 20px; line-height: 1.6;">
         <li><strong>Sin autoregalos:</strong> Nadie puede sacar su propio nombre.</li>
+        <li><strong>Exclusión familiar:</strong> Las personas registradas dentro de una misma familia o enlace nunca se regalarán entre ellas.</li>
         <li><strong>Sin nombres duplicados:</strong> Todos dan exactamente un regalo y reciben exactamente uno.</li>
         <li><strong>Revelación instantánea:</strong> Los participantes verán a su amigo secreto inmediatamente al entrar al sitio.</li>
       </ul>
@@ -192,6 +193,7 @@
         <thead>
           <tr>
             <th>Nombre</th>
+            <th>Grupo Familiar</th>
             <th>Ideas de Regalo</th>
             {{if eq .Event.Status "drawn"}}
               <th>Le Regala A 🎁</th>
@@ -203,8 +205,17 @@
         <tbody>
           {{range .Participants}}
             <tr>
-              <td><strong>{{.Name}}</strong></td>
-              <td style="max-width: 300px; font-size: 0.9rem; color: #4b5563;">
+              <td>
+                <strong>{{.Name}}</strong>
+              </td>
+              <td>
+                {{if ne .FamilyLabel "Individual"}}
+                  <span class="badge badge-warning" style="font-size: 0.78rem;">{{.FamilyLabel}}</span>
+                {{else}}
+                  <span class="badge badge-neutral" style="font-size: 0.78rem;">Individual</span>
+                {{end}}
+              </td>
+              <td style="max-width: 260px; font-size: 0.9rem; color: #4b5563;">
                 {{if .Wishlist}}{{.Wishlist}}{{else}}<span style="color: #9ca3af;">(sin ideas)</span>{{end}}
               </td>
               {{if eq $.Event.Status "drawn"}}
@@ -213,7 +224,7 @@
                 </td>
               {{else}}
                 <td>
-                  <form method="POST" action="/admin/delete-participant" onsubmit="return confirm('¿Eliminar a {{.Name}}? Su código de invitación volverá a estar disponible.');">
+                  <form method="POST" action="/admin/delete-participant" onsubmit="return confirm('¿Eliminar a {{.Name}}?{{if .IsHead}} ¡Atención: Al ser titular, también se eliminarán sus familiares registrados y se liberará su enlace de invitación!{{end}}');">
                     <input type="hidden" name="participant_id" value="{{.ID}}">
                     <button type="submit" class="btn btn-outline btn-danger btn-sm">Eliminar</button>
                   </form>
@@ -222,7 +233,7 @@
             </tr>
           {{else}}
             <tr>
-              <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;">
+              <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">
                 Aún no hay participantes registrados. ¡Comparte los enlaces de arriba!
               </td>
             </tr>

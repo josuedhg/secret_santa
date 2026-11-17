@@ -31,6 +31,11 @@ type Server struct {
 	staticFS  http.FileSystem
 }
 
+type FamilyMemberView struct {
+	Participant models.Participant
+	Receiver    models.Participant
+}
+
 // NewServer initializes the server with templates and handlers
 func NewServer(cfg *config.Config, store *storage.Store, tmplFS embed.FS, staticFS http.FileSystem) (*Server, error) {
 	pages := []string{"index.html", "join.html", "reveal.html", "admin.html"}
@@ -62,6 +67,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /code-redirect", s.handleCodeRedirect)
 	mux.HandleFunc("GET /join/{code}", s.handleJoinPage)
 	mux.HandleFunc("POST /join/{code}", s.handleJoinSubmit)
+	mux.HandleFunc("POST /family/add", s.handleFamilyAdd)
+	mux.HandleFunc("POST /family/delete", s.handleFamilyDelete)
 	mux.HandleFunc("GET /reveal", s.handleRevealSession)
 	mux.HandleFunc("GET /reveal/{code}", s.handleRevealCode)
 	mux.HandleFunc("GET /logout", s.handleParticipantLogout)
@@ -193,9 +200,14 @@ func (s *Server) handleJoinPage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleJoinSubmit processes the registration form submission without email/password!
+// handleJoinSubmit processes the registration form submission including optional family members
 func (s *Server) handleJoinSubmit(w http.ResponseWriter, r *http.Request) {
 	code := strings.ToUpper(strings.TrimSpace(r.PathValue("code")))
+	if err := r.ParseForm(); err != nil {
+		redirectWithError(w, r, fmt.Sprintf("/join/%s", code), "Error al procesar el formulario", "", "")
+		return
+	}
+
 	name := strings.TrimSpace(r.FormValue("name"))
 	wishlist := strings.TrimSpace(r.FormValue("wishlist"))
 
@@ -210,12 +222,82 @@ func (s *Server) handleJoinSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[REGISTRADO] Participante %s registrado con código %s", participant.Name, code)
+	// Registrar familiares adicionales si se especificaron
+	familyNames := r.Form["family_name[]"]
+	if len(familyNames) == 0 {
+		familyNames = r.Form["family_name"]
+	}
+	familyWishlists := r.Form["family_wishlist[]"]
+	if len(familyWishlists) == 0 {
+		familyWishlists = r.Form["family_wishlist"]
+	}
+
+	for i, fName := range familyNames {
+		cleanFName := strings.TrimSpace(fName)
+		if cleanFName == "" {
+			continue
+		}
+		var fWish string
+		if i < len(familyWishlists) {
+			fWish = strings.TrimSpace(familyWishlists[i])
+		}
+		_, _ = s.store.AddFamilyMember(participant.ID, cleanFName, fWish)
+	}
+
+	log.Printf("[REGISTRADO] Participante titular %s registrado con código %s", participant.Name, code)
 
 	// Inicia sesión automáticamente con la cookie
 	s.setParticipantSession(w, *participant)
 
 	http.Redirect(w, r, "/reveal?success=¡Bienvenido+al+intercambio!+Tu+sesión+ha+sido+iniciada.", http.StatusSeeOther)
+}
+
+// handleFamilyAdd allows a logged-in participant to add a family member before the draw
+func (s *Server) handleFamilyAdd(w http.ResponseWriter, r *http.Request) {
+	participant, ok := s.getParticipantFromSession(r)
+	if !ok {
+		http.Redirect(w, r, "/?error=Debes+iniciar+sesión+para+agregar+familiares.", http.StatusSeeOther)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	wishlist := strings.TrimSpace(r.FormValue("wishlist"))
+
+	if name == "" {
+		http.Redirect(w, r, "/reveal?error=El+nombre+del+familiar+no+puede+estar+vacío.", http.StatusSeeOther)
+		return
+	}
+
+	_, err := s.store.AddFamilyMember(participant.ID, name, wishlist)
+	if err != nil {
+		http.Redirect(w, r, "/reveal?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/reveal?success=¡%s+ha+sido+agregado(a)+al+intercambio!", url.QueryEscape(name)), http.StatusSeeOther)
+}
+
+// handleFamilyDelete allows a logged-in participant to remove a family member before the draw
+func (s *Server) handleFamilyDelete(w http.ResponseWriter, r *http.Request) {
+	participant, ok := s.getParticipantFromSession(r)
+	if !ok {
+		http.Redirect(w, r, "/?error=Debes+iniciar+sesión.", http.StatusSeeOther)
+		return
+	}
+
+	memberID := strings.TrimSpace(r.FormValue("member_id"))
+	if memberID == "" {
+		http.Redirect(w, r, "/reveal?error=Familiar+inválido.", http.StatusSeeOther)
+		return
+	}
+
+	err := s.store.DeleteFamilyMember(participant.ID, memberID)
+	if err != nil {
+		http.Redirect(w, r, "/reveal?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/reveal?success=Familiar+removido+del+intercambio.", http.StatusSeeOther)
 }
 
 func redirectWithError(w http.ResponseWriter, r *http.Request, targetURL, errMsg, name, wishlist string) {
@@ -265,11 +347,33 @@ func (s *Server) handleRevealCode(w http.ResponseWriter, r *http.Request) {
 func (s *Server) renderParticipantReveal(w http.ResponseWriter, r *http.Request, participant models.Participant) {
 	event := s.store.GetEvent()
 
-	var receiver models.Participant
+	familyID := participant.FamilyID
+	if familyID == "" {
+		familyID = participant.ID
+	}
+	familyMembers := s.store.GetFamilyMembers(familyID)
+	if len(familyMembers) == 0 {
+		familyMembers = []models.Participant{participant}
+	}
+
+	var memberViews []FamilyMemberView
+	for _, m := range familyMembers {
+		var receiver models.Participant
+		if event.Status == models.StatusDrawn && m.ReceiverID != "" {
+			if rec, found := s.store.GetParticipant(m.ReceiverID); found {
+				receiver = rec
+			}
+		}
+		memberViews = append(memberViews, FamilyMemberView{
+			Participant: m,
+			Receiver:    receiver,
+		})
+	}
+
+	var headReceiver models.Participant
 	if event.Status == models.StatusDrawn && participant.ReceiverID != "" {
-		rec, found := s.store.GetParticipant(participant.ReceiverID)
-		if found {
-			receiver = rec
+		if rec, found := s.store.GetParticipant(participant.ReceiverID); found {
+			headReceiver = rec
 		}
 	}
 
@@ -280,9 +384,12 @@ func (s *Server) renderParticipantReveal(w http.ResponseWriter, r *http.Request,
 		"Status":             event.Status,
 		"Participant":        participant,
 		"CurrentParticipant": &participant,
-		"Receiver":           receiver,
+		"FamilyMembers":      memberViews,
+		"HasFamily":          len(memberViews) > 1,
+		"Receiver":           headReceiver,
 		"Budget":             event.Budget,
 		"Success":            r.URL.Query().Get("success"),
+		"Error":              r.URL.Query().Get("error"),
 	})
 }
 
@@ -366,12 +473,20 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	type participantView struct {
 		models.Participant
 		ReceiverName string
+		FamilyLabel  string
 	}
 
 	pViews := make([]participantView, len(participants))
 	pMap := make(map[string]models.Participant)
+	familyMemberCount := make(map[string]int)
+
 	for _, p := range participants {
 		pMap[p.ID] = p
+		fID := p.FamilyID
+		if fID == "" {
+			fID = p.ID
+		}
+		familyMemberCount[fID]++
 	}
 
 	for i, p := range participants {
@@ -381,9 +496,27 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 				recName = rec.Name
 			}
 		}
+
+		fID := p.FamilyID
+		if fID == "" {
+			fID = p.ID
+		}
+
+		fLabel := ""
+		if familyMemberCount[fID] > 1 {
+			if p.IsHead {
+				fLabel = fmt.Sprintf("Familia de %s (Titular)", p.FamilyName)
+			} else {
+				fLabel = fmt.Sprintf("Familia de %s (Familiar)", p.FamilyName)
+			}
+		} else {
+			fLabel = "Individual"
+		}
+
 		pViews[i] = participantView{
 			Participant:  p,
 			ReceiverName: recName,
+			FamilyLabel:  fLabel,
 		}
 	}
 
@@ -504,7 +637,7 @@ func (s *Server) handleAdminDeleteParticipant(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	http.Redirect(w, r, "/admin?success=Participante+eliminado+y+código+de+invitación+restaurado.", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin?success=Participante+eliminado+del+intercambio.", http.StatusSeeOther)
 }
 
 // handleAdminUpdateEvent updates editable event metadata

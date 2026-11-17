@@ -1,24 +1,65 @@
 {{define "content"}}
-<div class="card" style="max-width: 600px; margin: 0 auto;">
+<div class="card" style="max-width: 650px; margin: 0 auto;">
   {{if eq .Status "registering"}}
-    <div style="text-align: center; padding: 20px 0;">
+    <div style="text-align: center; padding: 10px 0;">
       <div style="font-size: 52px; margin-bottom: 12px;">🎉</div>
-      <h2 style="font-size: 1.8rem; color: var(--secondary); margin-bottom: 8px;">¡Ya estás registrado, {{.Participant.Name}}!</h2>
+      <h2 style="font-size: 1.8rem; color: var(--secondary); margin-bottom: 8px;">
+        {{if .HasFamily}}
+          ¡Familia Registrada, {{.Participant.Name}}!
+        {{else}}
+          ¡Ya estás registrado, {{.Participant.Name}}!
+        {{end}}
+      </h2>
       <p style="color: var(--text-muted); font-size: 1.05rem; margin-bottom: 24px;">
         Tu participación en el intercambio de regalos está confirmada.
       </p>
 
+      <!-- Lista de Miembros del Hogar / Familia -->
       <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 18px; text-align: left; margin-bottom: 24px;">
-        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-          <span style="color: var(--text-muted);">Registrado como:</span>
-          <strong>{{.Participant.Name}}</strong>
+        <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 12px;">
+          👨‍👩‍👧‍👦 Participantes de tu cuenta ({{len .FamilyMembers}}):
         </div>
-        {{if .Participant.Wishlist}}
-          <div style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px;">
-            <span style="color: var(--text-muted); font-size: 0.9rem;">Tus ideas de regalo:</span>
-            <div style="font-style: italic; color: #334155; margin-top: 4px;">"{{.Participant.Wishlist}}"</div>
+
+        {{range .FamilyMembers}}
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border);">
+            <div>
+              <strong>{{.Participant.Name}}</strong>
+              {{if .Participant.IsHead}}
+                <span class="badge badge-success" style="font-size: 0.72rem; margin-left: 6px;">Titular</span>
+              {{else}}
+                <span class="badge badge-neutral" style="font-size: 0.72rem; margin-left: 6px;">Familiar</span>
+              {{end}}
+              {{if .Participant.Wishlist}}
+                <div style="font-size: 0.85rem; color: var(--text-muted); font-style: italic; margin-top: 2px;">
+                  Deseos: "{{.Participant.Wishlist}}"
+                </div>
+              {{end}}
+            </div>
+            {{if not .Participant.IsHead}}
+              <form method="POST" action="/family/delete" onsubmit="return confirm('¿Eliminar a {{.Participant.Name}} del intercambio?');" style="margin: 0;">
+                <input type="hidden" name="member_id" value="{{.Participant.ID}}">
+                <button type="submit" class="btn btn-outline btn-danger btn-sm" style="padding: 2px 8px; font-size: 0.75rem;">Eliminar</button>
+              </form>
+            {{end}}
           </div>
         {{end}}
+
+        <!-- Formulario para agregar más familiares antes del sorteo -->
+        <div style="margin-top: 16px; padding-top: 14px; border-top: 2px dashed var(--border);">
+          <div style="font-size: 0.9rem; font-weight: 700; color: #9a3412; margin-bottom: 10px;">
+            ➕ ¿Deseas agregar otro hijo o familiar a este intercambio?
+          </div>
+          <form method="POST" action="/family/add" style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <input type="text" name="name" placeholder="Nombre del familiar" required style="flex: 1; min-width: 160px; padding: 8px 12px; font-size: 0.9rem; border: 1px solid var(--border); border-radius: 6px;">
+              <input type="text" name="wishlist" placeholder="Ideas de regalo (opcional)" style="flex: 1; min-width: 160px; padding: 8px 12px; font-size: 0.9rem; border: 1px solid var(--border); border-radius: 6px;">
+              <button type="submit" class="btn btn-secondary btn-sm" style="white-space: nowrap;">Agregar Familiar</button>
+            </div>
+            <div style="font-size: 0.78rem; color: #7c2d12;">
+              ✨ El sorteo excluirá automáticamente que se regalen cosas entre integrantes de tu misma familia.
+            </div>
+          </form>
+        </div>
       </div>
 
       <div class="alert alert-info" style="text-align: left;">
@@ -37,47 +78,110 @@
     </div>
   {{else}}
     <!-- Draw is completed -->
-    <div class="reveal-wrapper">
-      <div style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 600;">
-        Asignación del Intercambio para: {{.Participant.Name}}
-      </div>
-
-      <div id="giftBoxBtn" class="gift-box-container" onclick="unwrapGift()">
-        <button class="gift-box-btn">
-          <span class="gift-box-icon">🎁</span>
-          <span>¡Toca para descubrir a quién le regalas!</span>
-          <span style="font-size: 0.85rem; font-weight: normal; opacity: 0.9;">Descubre a quién te tocó en el intercambio</span>
-        </button>
-      </div>
-
-      <div id="revealResult" class="revealed-content" style="display: none;">
-        <div style="font-size: 0.95rem; text-transform: uppercase; letter-spacing: 1.5px; color: #166534; font-weight: 700;">
-          🎅 Te toca regalarle a 🎅
+    {{if not .HasFamily}}
+      <!-- Single participant reveal -->
+      <div class="reveal-wrapper">
+        <div style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 600;">
+          Asignación del Intercambio para: {{.Participant.Name}}
         </div>
-        <div class="receiver-name">{{.Receiver.Name}}</div>
 
-        {{if .Receiver.Wishlist}}
-          <div style="background: #ffffff; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; margin: 18px 0; text-align: left;">
-            <div style="font-size: 0.85rem; font-weight: 700; color: #166534; margin-bottom: 4px;">
-              🎁 Ideas de regalo de {{.Receiver.Name}}:
+        <div id="giftBoxBtn" class="gift-box-container" onclick="unwrapGift()">
+          <button class="gift-box-btn">
+            <span class="gift-box-icon">🎁</span>
+            <span>¡Toca para descubrir a quién le regalas!</span>
+            <span style="font-size: 0.85rem; font-weight: normal; opacity: 0.9;">Descubre a quién te tocó en el intercambio</span>
+          </button>
+        </div>
+
+        <div id="revealResult" class="revealed-content" style="display: none;">
+          <div style="font-size: 0.95rem; text-transform: uppercase; letter-spacing: 1.5px; color: #166534; font-weight: 700;">
+            🎅 Te toca regalarle a 🎅
+          </div>
+          <div class="receiver-name">{{.Receiver.Name}}</div>
+
+          {{if .Receiver.Wishlist}}
+            <div style="background: #ffffff; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; margin: 18px 0; text-align: left;">
+              <div style="font-size: 0.85rem; font-weight: 700; color: #166534; margin-bottom: 4px;">
+                🎁 Ideas de regalo de {{.Receiver.Name}}:
+              </div>
+              <div style="color: #374151; font-size: 0.95rem;">
+                {{.Receiver.Wishlist}}
+              </div>
             </div>
-            <div style="color: #374151; font-size: 0.95rem;">
-              {{.Receiver.Wishlist}}
+          {{end}}
+
+          {{if .Budget}}
+            <div style="font-size: 0.9rem; color: #4b5563; margin-top: 10px;">
+              <strong>Límite de presupuesto:</strong> {{.Budget}}
+            </div>
+          {{end}}
+
+          <div style="margin-top: 20px; padding: 12px; background: #fef2f2; border-radius: 8px; color: #991b1b; font-size: 0.9rem; font-weight: 600;">
+            🤫 ¡Es un secreto! ¡No le digas a {{.Receiver.Name}} que te tocó en el intercambio!
+          </div>
+        </div>
+      </div>
+    {{else}}
+      <!-- Multiple family members reveal with tabs -->
+      <div style="margin-bottom: 20px;">
+        <div style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 12px; text-align: center;">
+          👨‍👩‍👧‍👦 Asignaciones de tu Grupo Familiar
+        </div>
+        <div class="family-tabs-nav">
+          {{range $i, $m := .FamilyMembers}}
+            <button class="family-tab-btn {{if eq $i 0}}active{{end}}" id="tab-btn-{{$m.Participant.ID}}" onclick="selectFamilyTab('{{$m.Participant.ID}}')">
+              👤 {{$m.Participant.Name}}
+            </button>
+          {{end}}
+        </div>
+      </div>
+
+      {{range $i, $m := .FamilyMembers}}
+        <div id="panel-{{$m.Participant.ID}}" class="family-reveal-panel" style="{{if ne $i 0}}display: none;{{end}}">
+          <div class="reveal-wrapper" style="padding-top: 10px;">
+            <div style="font-size: 0.95rem; text-transform: uppercase; letter-spacing: 1px; color: var(--secondary); font-weight: 700;">
+              🎁 Destinatario para: {{$m.Participant.Name}}
+            </div>
+
+            <div id="giftBoxBtn-{{$m.Participant.ID}}" class="gift-box-container" onclick="unwrapGift('{{$m.Participant.ID}}')">
+              <button class="gift-box-btn">
+                <span class="gift-box-icon">🎁</span>
+                <span>¡Toca para descubrir el amigo secreto de {{$m.Participant.Name}}!</span>
+                <span style="font-size: 0.85rem; font-weight: normal; opacity: 0.9;">Descubre a quién le regala</span>
+              </button>
+            </div>
+
+            <div id="revealResult-{{$m.Participant.ID}}" class="revealed-content" style="display: none;">
+              <div style="font-size: 0.95rem; text-transform: uppercase; letter-spacing: 1.5px; color: #166534; font-weight: 700;">
+                🎅 {{$m.Participant.Name}} le regala a 🎅
+              </div>
+              <div class="receiver-name">{{$m.Receiver.Name}}</div>
+
+              {{if $m.Receiver.Wishlist}}
+                <div style="background: #ffffff; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; margin: 18px 0; text-align: left;">
+                  <div style="font-size: 0.85rem; font-weight: 700; color: #166534; margin-bottom: 4px;">
+                    🎁 Ideas de regalo de {{$m.Receiver.Name}}:
+                  </div>
+                  <div style="color: #374151; font-size: 0.95rem;">
+                    {{$m.Receiver.Wishlist}}
+                  </div>
+                </div>
+              {{end}}
+
+              {{if $.Budget}}
+                <div style="font-size: 0.9rem; color: #4b5563; margin-top: 10px;">
+                  <strong>Límite de presupuesto:</strong> {{$.Budget}}
+                </div>
+              {{end}}
+
+              <div style="margin-top: 20px; padding: 12px; background: #fef2f2; border-radius: 8px; color: #991b1b; font-size: 0.9rem; font-weight: 600;">
+                🤫 ¡Es un secreto! ¡No le digas a {{$m.Receiver.Name}} que {{$m.Participant.Name}} le regala!
+              </div>
             </div>
           </div>
-        {{end}}
-
-        {{if .Budget}}
-          <div style="font-size: 0.9rem; color: #4b5563; margin-top: 10px;">
-            <strong>Límite de presupuesto:</strong> {{.Budget}}
-          </div>
-        {{end}}
-
-        <div style="margin-top: 20px; padding: 12px; background: #fef2f2; border-radius: 8px; color: #991b1b; font-size: 0.9rem; font-weight: 600;">
-          🤫 ¡Es un secreto! ¡No le digas a {{.Receiver.Name}} que te tocó en el intercambio!
         </div>
-      </div>
-    </div>
+      {{end}}
+    {{end}}
   {{end}}
 </div>
 {{end}}

@@ -38,10 +38,13 @@ function copyAllUnusedLinks(selector) {
   });
 }
 
-// Experiencia interactiva para descubrir a quién le regalas
-function unwrapGift() {
-  const boxBtn = document.getElementById("giftBoxBtn");
-  const revealResult = document.getElementById("revealResult");
+// Experiencia interactiva para descubrir a quién le regalas (soporta ID para múltiples miembros)
+function unwrapGift(memberId) {
+  const boxBtnId = memberId ? "giftBoxBtn-" + memberId : "giftBoxBtn";
+  const revealResultId = memberId ? "revealResult-" + memberId : "revealResult";
+
+  const boxBtn = document.getElementById(boxBtnId);
+  const revealResult = document.getElementById(revealResultId);
 
   if (boxBtn && revealResult) {
     boxBtn.style.transform = "scale(0.8) rotate(15deg)";
@@ -52,6 +55,22 @@ function unwrapGift() {
       triggerHolidayConfetti();
     }, 250);
   }
+}
+
+// Cambiar de pestaña entre miembros familiares
+function selectFamilyTab(memberId) {
+  document.querySelectorAll(".family-tab-btn").forEach(btn => {
+    btn.classList.remove("active");
+  });
+  document.querySelectorAll(".family-reveal-panel").forEach(panel => {
+    panel.style.display = "none";
+  });
+
+  const activeBtn = document.getElementById("tab-btn-" + memberId);
+  const activePanel = document.getElementById("panel-" + memberId);
+
+  if (activeBtn) activeBtn.classList.add("active");
+  if (activePanel) activePanel.style.display = "block";
 }
 
 // Animación festiva de confeti con canvas nativo
