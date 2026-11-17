@@ -13,13 +13,6 @@ type Config struct {
 	BaseURL  string
 	DataPath string
 	AdminKey string
-
-	// SMTP settings
-	SMTPHost string
-	SMTPPort int
-	SMTPUser string
-	SMTPPass string
-	SMTPFrom string
 }
 
 func getEnv(key, fallback string) string {
@@ -46,12 +39,6 @@ func LoadConfig() *Config {
 	flag.StringVar(&cfg.DataPath, "data", getEnv("DATA_PATH", "data/secretsanta.json"), "Path to database JSON file")
 	flag.StringVar(&cfg.AdminKey, "admin-key", getEnv("ADMIN_KEY", ""), "Admin secret passkey (auto-generated if empty)")
 
-	flag.StringVar(&cfg.SMTPHost, "smtp-host", getEnv("SMTP_HOST", ""), "SMTP server hostname")
-	flag.IntVar(&cfg.SMTPPort, "smtp-port", getEnvInt("SMTP_PORT", 587), "SMTP port")
-	flag.StringVar(&cfg.SMTPUser, "smtp-user", getEnv("SMTP_USER", ""), "SMTP username")
-	flag.StringVar(&cfg.SMTPPass, "smtp-pass", getEnv("SMTP_PASS", ""), "SMTP password")
-	flag.StringVar(&cfg.SMTPFrom, "smtp-from", getEnv("SMTP_FROM", ""), "From address for emails")
-
 	flag.Parse()
 
 	// Clean BaseURL (remove trailing slash)
@@ -61,10 +48,6 @@ func LoadConfig() *Config {
 	}
 
 	return cfg
-}
-
-func (c *Config) HasSMTP() bool {
-	return c.SMTPHost != "" && c.SMTPPort > 0 && c.SMTPFrom != ""
 }
 
 func (c *Config) FormatInviteLink(code string) string {

@@ -9,6 +9,19 @@
 </head>
 <body>
   <div class="container">
+    {{if .CurrentParticipant}}
+      <div style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1px solid var(--border); padding: 8px 16px; border-radius: 9999px; margin-bottom: 20px; font-size: 0.9rem;">
+        <div>
+          <span>👋 Signed in as:</span>
+          <strong style="color: var(--secondary);">{{.CurrentParticipant.Name}}</strong>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <a href="/reveal" style="color: var(--primary); font-weight: 600; text-decoration: none;">🎁 My Match</a>
+          <a href="/logout" style="color: var(--text-muted); text-decoration: none; font-size: 0.85rem;">Sign out</a>
+        </div>
+      </div>
+    {{end}}
+
     <div class="header-banner">
       <div class="logo-icon">🎅</div>
       <h1>{{.EventTitle}}</h1>

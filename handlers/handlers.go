@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"secret_santa/config"
 	"secret_santa/logic"
@@ -19,12 +18,17 @@ import (
 	"secret_santa/storage"
 )
 
+const (
+	cookieParticipantSession = "santa_participant_session"
+	cookieAdminSession       = "santa_admin_session"
+	sessionDurationSec       = 86400 * 365 // 1 year
+)
+
 type Server struct {
-	cfg        *config.Config
-	store      *storage.Store
-	mailer     *logic.Mailer
-	templates  map[string]*template.Template
-	staticFS   http.FileSystem
+	cfg       *config.Config
+	store     *storage.Store
+	templates map[string]*template.Template
+	staticFS  http.FileSystem
 }
 
 // NewServer initializes the server with templates and handlers
@@ -43,7 +47,6 @@ func NewServer(cfg *config.Config, store *storage.Store, tmplFS embed.FS, static
 	return &Server{
 		cfg:       cfg,
 		store:     store,
-		mailer:    logic.NewMailer(cfg),
 		templates: templates,
 		staticFS:  staticFS,
 	}, nil
@@ -59,15 +62,15 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /code-redirect", s.handleCodeRedirect)
 	mux.HandleFunc("GET /join/{code}", s.handleJoinPage)
 	mux.HandleFunc("POST /join/{code}", s.handleJoinSubmit)
-	mux.HandleFunc("GET /reveal/{code}", s.handleRevealPage)
+	mux.HandleFunc("GET /reveal", s.handleRevealSession)
+	mux.HandleFunc("GET /reveal/{code}", s.handleRevealCode)
+	mux.HandleFunc("GET /logout", s.handleParticipantLogout)
 
 	// Admin Dashboard & Actions
 	mux.HandleFunc("GET /admin", s.handleAdminDashboard)
-	mux.HandleFunc("POST /admin/login", s.handleAdminLogin)
 	mux.HandleFunc("GET /admin/logout", s.handleAdminLogout)
 	mux.HandleFunc("POST /admin/generate-codes", s.requireAdmin(s.handleAdminGenerateCodes))
 	mux.HandleFunc("POST /admin/roll", s.requireAdmin(s.handleAdminRoll))
-	mux.HandleFunc("POST /admin/resend-emails", s.requireAdmin(s.handleAdminResendEmails))
 	mux.HandleFunc("POST /admin/reset-draw", s.requireAdmin(s.handleAdminResetDraw))
 	mux.HandleFunc("POST /admin/delete-participant", s.requireAdmin(s.handleAdminDeleteParticipant))
 	mux.HandleFunc("POST /admin/update-event", s.requireAdmin(s.handleAdminUpdateEvent))
@@ -82,7 +85,6 @@ func (s *Server) render(w http.ResponseWriter, tmplName string, data any) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// Execute layout template with defined content
 	err := tmpl.ExecuteTemplate(w, "layout", data)
 	if err != nil {
 		log.Printf("Template render error (%s): %v", tmplName, err)
@@ -90,8 +92,34 @@ func (s *Server) render(w http.ResponseWriter, tmplName string, data any) {
 	}
 }
 
-// handleHome renders the welcome / code entry page
+// Participant Session Helpers
+func (s *Server) getParticipantFromSession(r *http.Request) (models.Participant, bool) {
+	cookie, err := r.Cookie(cookieParticipantSession)
+	if err != nil || cookie.Value == "" {
+		return models.Participant{}, false
+	}
+	return s.store.GetParticipantBySession(cookie.Value)
+}
+
+func (s *Server) setParticipantSession(w http.ResponseWriter, p models.Participant) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieParticipantSession,
+		Value:    p.SessionToken,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   sessionDurationSec,
+	})
+}
+
+// handleHome renders welcome/code input page, or redirects to /reveal if already logged in!
 func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
+	// If participant is already logged in, take them straight to their match!
+	if _, ok := s.getParticipantFromSession(r); ok {
+		http.Redirect(w, r, "/reveal", http.StatusSeeOther)
+		return
+	}
+
 	event := s.store.GetEvent()
 	s.render(w, "index.html", map[string]any{
 		"Title":            "Welcome",
@@ -112,7 +140,7 @@ func (s *Server) handleCodeRedirect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/join/"+url.PathEscape(code), http.StatusSeeOther)
 }
 
-// handleJoinPage shows the registration form or redirects to reveal if already registered
+// handleJoinPage shows the registration form or starts session if already registered
 func (s *Server) handleJoinPage(w http.ResponseWriter, r *http.Request) {
 	code := strings.ToUpper(strings.TrimSpace(r.PathValue("code")))
 	event := s.store.GetEvent()
@@ -128,8 +156,11 @@ func (s *Server) handleJoinPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If the code was already redeemed, redirect directly to reveal page for this participant
+	// If the code was already redeemed, restore their session and show reveal!
 	if inv.Used {
+		if p, ok := s.store.GetParticipantByCode(code); ok {
+			s.setParticipantSession(w, p)
+		}
 		http.Redirect(w, r, "/reveal/"+url.PathEscape(code), http.StatusSeeOther)
 		return
 	}
@@ -145,55 +176,54 @@ func (s *Server) handleJoinPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var currentP *models.Participant
+	if p, ok := s.getParticipantFromSession(r); ok {
+		currentP = &p
+	}
+
 	s.render(w, "join.html", map[string]any{
-		"Title":            "Register",
-		"EventTitle":       event.Title,
-		"EventDescription": event.Description,
-		"Code":             code,
-		"Budget":           event.Budget,
-		"Error":            r.URL.Query().Get("error"),
-		"FormName":         r.URL.Query().Get("name"),
-		"FormEmail":        r.URL.Query().Get("email"),
-		"FormWishlist":     r.URL.Query().Get("wishlist"),
+		"Title":              "Register",
+		"EventTitle":         event.Title,
+		"EventDescription":   event.Description,
+		"Code":               code,
+		"Budget":             event.Budget,
+		"CurrentParticipant": currentP,
+		"Error":              r.URL.Query().Get("error"),
+		"FormName":           r.URL.Query().Get("name"),
+		"FormWishlist":       r.URL.Query().Get("wishlist"),
 	})
 }
 
-// handleJoinSubmit processes the registration form submission
+// handleJoinSubmit processes the registration form submission without email/password!
 func (s *Server) handleJoinSubmit(w http.ResponseWriter, r *http.Request) {
 	code := strings.ToUpper(strings.TrimSpace(r.PathValue("code")))
 	name := strings.TrimSpace(r.FormValue("name"))
-	email := strings.TrimSpace(r.FormValue("email"))
 	wishlist := strings.TrimSpace(r.FormValue("wishlist"))
 
 	if name == "" {
-		redirectWithError(w, r, fmt.Sprintf("/join/%s", code), "Name is required", name, email, wishlist)
+		redirectWithError(w, r, fmt.Sprintf("/join/%s", code), "Name is required", name, wishlist)
 		return
 	}
 
-	if email == "" {
-		redirectWithError(w, r, fmt.Sprintf("/join/%s", code), "Email address is required for match notification", name, email, wishlist)
-		return
-	}
-
-	participant, err := s.store.RegisterParticipant(code, name, email, wishlist)
+	participant, err := s.store.RegisterParticipant(code, name, wishlist)
 	if err != nil {
-		redirectWithError(w, r, fmt.Sprintf("/join/%s", code), err.Error(), name, email, wishlist)
+		redirectWithError(w, r, fmt.Sprintf("/join/%s", code), err.Error(), name, wishlist)
 		return
 	}
 
-	log.Printf("[REGISTERED] Participant %s (%s) registered with code %s", participant.Name, participant.Email, code)
+	log.Printf("[REGISTERED] Participant %s registered with code %s", participant.Name, code)
 
-	http.Redirect(w, r, fmt.Sprintf("/reveal/%s?success=Registration+successful!+Welcome+to+Secret+Santa!", url.PathEscape(code)), http.StatusSeeOther)
+	// Automatically establish participant session cookie to keep them logged in!
+	s.setParticipantSession(w, *participant)
+
+	http.Redirect(w, r, "/reveal?success=Welcome+to+Secret+Santa!+You+are+now+logged+in.", http.StatusSeeOther)
 }
 
-func redirectWithError(w http.ResponseWriter, r *http.Request, targetURL, errMsg, name, email, wishlist string) {
+func redirectWithError(w http.ResponseWriter, r *http.Request, targetURL, errMsg, name, wishlist string) {
 	q := url.Values{}
 	q.Set("error", errMsg)
 	if name != "" {
 		q.Set("name", name)
-	}
-	if email != "" {
-		q.Set("email", email)
 	}
 	if wishlist != "" {
 		q.Set("wishlist", wishlist)
@@ -201,27 +231,41 @@ func redirectWithError(w http.ResponseWriter, r *http.Request, targetURL, errMsg
 	http.Redirect(w, r, targetURL+"?"+q.Encode(), http.StatusSeeOther)
 }
 
-// handleRevealPage displays the participant's status or their drawn match
-func (s *Server) handleRevealPage(w http.ResponseWriter, r *http.Request) {
+// handleRevealSession displays the participant's status based on their active session cookie
+func (s *Server) handleRevealSession(w http.ResponseWriter, r *http.Request) {
+	participant, ok := s.getParticipantFromSession(r)
+	if !ok {
+		// Not logged in, redirect to home
+		http.Redirect(w, r, "/?error=Please+enter+your+invitation+code+to+access+your+match.", http.StatusSeeOther)
+		return
+	}
+
+	s.renderParticipantReveal(w, r, participant)
+}
+
+// handleRevealCode displays participant status via code, and refreshes their session cookie
+func (s *Server) handleRevealCode(w http.ResponseWriter, r *http.Request) {
 	code := strings.ToUpper(strings.TrimSpace(r.PathValue("code")))
-	event := s.store.GetEvent()
 
 	participant, exists := s.store.GetParticipantByCode(code)
 	if !exists {
-		// Code might not be registered yet
 		inv, invExists := s.store.GetInviteCode(code)
 		if invExists && !inv.Used {
 			http.Redirect(w, r, "/join/"+url.PathEscape(code), http.StatusSeeOther)
 			return
 		}
-		s.render(w, "index.html", map[string]any{
-			"Title":            "Not Found",
-			"EventTitle":       event.Title,
-			"EventDescription": event.Description,
-			"Error":            "No participant registration found for this invitation code.",
-		})
+		http.Redirect(w, r, "/?error=No+registration+found+for+this+invitation+code.", http.StatusSeeOther)
 		return
 	}
+
+	// Keep them logged in on this browser!
+	s.setParticipantSession(w, participant)
+
+	s.renderParticipantReveal(w, r, participant)
+}
+
+func (s *Server) renderParticipantReveal(w http.ResponseWriter, r *http.Request, participant models.Participant) {
+	event := s.store.GetEvent()
 
 	var receiver models.Participant
 	if event.Status == models.StatusDrawn && participant.ReceiverID != "" {
@@ -232,15 +276,28 @@ func (s *Server) handleRevealPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "reveal.html", map[string]any{
-		"Title":            fmt.Sprintf("Secret Santa - %s", participant.Name),
-		"EventTitle":       event.Title,
-		"EventDescription": event.Description,
-		"Status":           event.Status,
-		"Participant":      participant,
-		"Receiver":         receiver,
-		"Budget":           event.Budget,
-		"Success":          r.URL.Query().Get("success"),
+		"Title":              fmt.Sprintf("Secret Santa - %s", participant.Name),
+		"EventTitle":         event.Title,
+		"EventDescription":   event.Description,
+		"Status":             event.Status,
+		"Participant":        participant,
+		"CurrentParticipant": &participant,
+		"Receiver":           receiver,
+		"Budget":             event.Budget,
+		"Success":            r.URL.Query().Get("success"),
 	})
+}
+
+// handleParticipantLogout logs out the participant
+func (s *Server) handleParticipantLogout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieParticipantSession,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
+	http.Redirect(w, r, "/?success=You+have+been+signed+out.", http.StatusSeeOther)
 }
 
 // Admin Authentication Helpers
@@ -257,8 +314,8 @@ func (s *Server) isAdminAuthenticated(r *http.Request) bool {
 		}
 	}
 
-	// Check Cookie
-	cookie, err := r.Cookie("admin_auth")
+	// Check Admin Cookie
+	cookie, err := r.Cookie(cookieAdminSession)
 	if err == nil && cookie.Value != "" {
 		if subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(event.AdminKey)) == 1 {
 			return true
@@ -271,7 +328,7 @@ func (s *Server) isAdminAuthenticated(r *http.Request) bool {
 func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.isAdminAuthenticated(r) {
-			http.Redirect(w, r, "/admin?error=Unauthorized.+Please+log+in+with+the+admin+passkey.", http.StatusSeeOther)
+			http.Redirect(w, r, "/admin?error=Organizer+access+required.", http.StatusSeeOther)
 			return
 		}
 		next(w, r)
@@ -283,21 +340,21 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	event := s.store.GetEvent()
 	isAuth := s.isAdminAuthenticated(r)
 
-	// If URL had ?key=..., set cookie automatically
+	// If URL had ?key=..., automatically set admin cookie for 1 year so organizer stays logged in!
 	if key := r.URL.Query().Get("key"); key != "" && isAuth {
 		http.SetCookie(w, &http.Cookie{
-			Name:     "admin_auth",
+			Name:     cookieAdminSession,
 			Value:    event.AdminKey,
 			Path:     "/",
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
-			MaxAge:   86400 * 7, // 7 days
+			MaxAge:   sessionDurationSec,
 		})
 	}
 
 	if !isAuth {
 		s.render(w, "admin.html", map[string]any{
-			"Title":            "Admin Login",
+			"Title":            "Organizer Access",
 			"EventTitle":       event.Title,
 			"EventDescription": event.Description,
 			"IsAuthenticated":  false,
@@ -366,7 +423,7 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "admin.html", map[string]any{
-		"Title":            "Admin Dashboard",
+		"Title":            "Organizer Dashboard",
 		"EventTitle":       event.Title,
 		"EventDescription": event.Description,
 		"IsAuthenticated":  true,
@@ -383,38 +440,16 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleAdminLogin authenticates passkey and sets cookie
-func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
-	key := strings.TrimSpace(r.FormValue("admin_key"))
-	event := s.store.GetEvent()
-
-	if subtle.ConstantTimeCompare([]byte(key), []byte(event.AdminKey)) != 1 {
-		http.Redirect(w, r, "/admin?error=Invalid+admin+passkey", http.StatusSeeOther)
-		return
-	}
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "admin_auth",
-		Value:    event.AdminKey,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   86400 * 7,
-	})
-
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
-}
-
 // handleAdminLogout logs out the admin
 func (s *Server) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     "admin_auth",
+		Name:     cookieAdminSession,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
 		MaxAge:   -1,
 	})
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin?success=Organizer+signed+out.", http.StatusSeeOther)
 }
 
 // handleAdminGenerateCodes generates new invite codes
@@ -452,53 +487,9 @@ func (s *Server) handleAdminRoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Trigger notifications in background goroutine
-	go s.dispatchAllMatchEmails()
+	log.Printf("[DRAW COMPLETE] %d participants matched successfully!", len(assignments))
 
-	http.Redirect(w, r, "/admin?success=Secret+Santa+draw+successfully+completed!+Notifications+dispatched.", http.StatusSeeOther)
-}
-
-// dispatchAllMatchEmails sends notification emails to all participants
-func (s *Server) dispatchAllMatchEmails() {
-	event := s.store.GetEvent()
-	participants := s.store.ListParticipants()
-
-	pMap := make(map[string]models.Participant)
-	for _, p := range participants {
-		pMap[p.ID] = p
-	}
-
-	for _, giver := range participants {
-		if giver.ReceiverID == "" {
-			continue
-		}
-		receiver, ok := pMap[giver.ReceiverID]
-		if !ok {
-			continue
-		}
-
-		err := s.mailer.SendMatchNotification(event, giver, receiver)
-		if err != nil {
-			log.Printf("[EMAIL ERROR] Failed sending match to %s (%s): %v", giver.Name, giver.Email, err)
-			_ = s.store.UpdateParticipantEmailStatus(giver.ID, false, err.Error())
-		} else {
-			log.Printf("[EMAIL SENT] Successfully notified %s (%s) about their match", giver.Name, giver.Email)
-			_ = s.store.UpdateParticipantEmailStatus(giver.ID, true, "")
-		}
-		time.Sleep(50 * time.Millisecond) // Polite delay between emails
-	}
-}
-
-// handleAdminResendEmails manually triggers resending match emails
-func (s *Server) handleAdminResendEmails(w http.ResponseWriter, r *http.Request) {
-	event := s.store.GetEvent()
-	if event.Status != models.StatusDrawn {
-		http.Redirect(w, r, "/admin?error=Cannot+send+emails+before+the+draw+has+been+rolled", http.StatusSeeOther)
-		return
-	}
-
-	go s.dispatchAllMatchEmails()
-	http.Redirect(w, r, "/admin?success=Email+notifications+queued+for+delivery!", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin?success=Secret+Santa+draw+successfully+completed!+Participants+can+now+view+their+matches.", http.StatusSeeOther)
 }
 
 // handleAdminResetDraw resets the draw to allow re-registering or re-drawing

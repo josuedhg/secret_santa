@@ -62,17 +62,12 @@ func main() {
 
 	// Server startup banner
 	fmt.Println("==================================================================")
-	fmt.Println("🎅 SECRET SANTA APPLICATION")
+	fmt.Println("🎅 SECRET SANTA APPLICATION (No Passwords & No Emails Required)")
 	fmt.Println("==================================================================")
 	fmt.Printf(" Server running at:     %s\n", cfg.BaseURL)
 	fmt.Printf(" Data stored at:        %s\n", cfg.DataPath)
-	fmt.Printf(" Admin Passkey:         %s\n", event.AdminKey)
-	fmt.Printf(" Direct Admin Link:     %s/admin?key=%s\n", cfg.BaseURL, event.AdminKey)
-	if cfg.HasSMTP() {
-		fmt.Printf(" Email Notifications:   Enabled (SMTP: %s:%d)\n", cfg.SMTPHost, cfg.SMTPPort)
-	} else {
-		fmt.Println(" Email Notifications:   Mock/Console mode (SMTP not configured)")
-	}
+	fmt.Printf(" Organizer Key:         %s\n", event.AdminKey)
+	fmt.Printf(" Direct Organizer Link: %s/admin?key=%s\n", cfg.BaseURL, event.AdminKey)
 	fmt.Println("==================================================================")
 
 	// Graceful shutdown handling

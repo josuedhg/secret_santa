@@ -1,21 +1,17 @@
 {{define "content"}}
-<div class="card" style="max-width: 620px; margin: 0 auto;">
+<div class="card" style="max-width: 600px; margin: 0 auto;">
   {{if eq .Status "registering"}}
     <div style="text-align: center; padding: 20px 0;">
       <div style="font-size: 52px; margin-bottom: 12px;">🎉</div>
-      <h2 style="font-size: 1.8rem; color: var(--secondary); margin-bottom: 8px;">You're Registered, {{.Participant.Name}}!</h2>
+      <h2 style="font-size: 1.8rem; color: var(--secondary); margin-bottom: 8px;">You're in, {{.Participant.Name}}!</h2>
       <p style="color: var(--text-muted); font-size: 1.05rem; margin-bottom: 24px;">
-        Your spot in the Secret Santa exchange is confirmed.
+        You are officially registered for the Secret Santa exchange.
       </p>
 
       <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 18px; text-align: left; margin-bottom: 24px;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-          <span style="color: var(--text-muted);">Registered Name:</span>
+          <span style="color: var(--text-muted);">Registered As:</span>
           <strong>{{.Participant.Name}}</strong>
-        </div>
-        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-          <span style="color: var(--text-muted);">Notification Email:</span>
-          <strong>{{.Participant.Email}}</strong>
         </div>
         {{if .Participant.Wishlist}}
           <div style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px;">
@@ -28,14 +24,14 @@
       <div class="alert alert-info" style="text-align: left;">
         <span>⏳</span>
         <div>
-          <strong>Waiting for Draw:</strong>
-          The organizer is still collecting participants. As soon as the Secret Santa is rolled, you will receive an email and this page will show who you get!
+          <strong>Draw Pending:</strong>
+          The organizer is still waiting for everyone to register. Once they roll the Secret Santa, simply open this site on this device to see who you got! Your session stays active automatically.
         </div>
       </div>
 
       <div style="margin-top: 20px;">
         <button class="btn btn-outline btn-sm" onclick="copyToClipboard(window.location.href, this)">
-          📋 Copy Your Personal Secret Link
+          📋 Copy Link to Revisit Anytime
         </button>
       </div>
     </div>
@@ -43,7 +39,7 @@
     <!-- Draw is completed -->
     <div class="reveal-wrapper">
       <div style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 600;">
-        Secret Santa for: {{.Participant.Name}}
+        Secret Santa Assignment for: {{.Participant.Name}}
       </div>
 
       <div id="giftBoxBtn" class="gift-box-container" onclick="unwrapGift()">
@@ -73,19 +69,13 @@
 
         {{if .Budget}}
           <div style="font-size: 0.9rem; color: #4b5563; margin-top: 10px;">
-            <strong>Budget:</strong> {{.Budget}}
+            <strong>Budget limit:</strong> {{.Budget}}
           </div>
         {{end}}
 
         <div style="margin-top: 20px; padding: 12px; background: #fef2f2; border-radius: 8px; color: #991b1b; font-size: 0.9rem; font-weight: 600;">
           🤫 Keep it a secret! Don't let {{.Receiver.Name}} know you drew them!
         </div>
-      </div>
-
-      <div style="margin-top: 24px;">
-        <button class="btn btn-outline btn-sm" onclick="copyToClipboard(window.location.href, this)">
-          📋 Bookmark / Copy This Link
-        </button>
       </div>
     </div>
   {{end}}

@@ -17,14 +17,13 @@ import (
 )
 
 var (
-	ErrCodeNotFound     = errors.New("invitation code not found")
-	ErrCodeAlreadyUsed   = errors.New("this invitation code has already been used")
+	ErrCodeNotFound       = errors.New("invitation code not found")
+	ErrCodeAlreadyUsed     = errors.New("this invitation code has already been used")
 	ErrRegistrationClosed = errors.New("registration is closed because the draw has already occurred")
-	ErrNameRequired     = errors.New("name cannot be empty")
-	ErrNameTaken        = errors.New("this name is already taken by another participant")
-	ErrEmailTaken       = errors.New("this email is already registered")
+	ErrNameRequired       = errors.New("name cannot be empty")
+	ErrNameTaken          = errors.New("this name is already taken by another participant")
 	ErrParticipantNotFound = errors.New("participant not found")
-	ErrCannotDeleteDrawn = errors.New("cannot remove participants after the draw has been completed")
+	ErrCannotDeleteDrawn   = errors.New("cannot remove participants after the draw has been completed")
 )
 
 type Store struct {
@@ -40,7 +39,6 @@ func GenerateRandomString(n int) string {
 	for i := 0; i < n; i++ {
 		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
 		if err != nil {
-			// fallback
 			result[i] = charset[0]
 			continue
 		}
@@ -100,7 +98,6 @@ func NewStore(filePath string, defaultAdminKey string) (*Store, error) {
 		if s.state.Participants == nil {
 			s.state.Participants = make(map[string]models.Participant)
 		}
-		// If an admin key was explicitly passed via env/flag and differs, keep it
 		if defaultAdminKey != "" && s.state.Event.AdminKey != defaultAdminKey {
 			s.state.Event.AdminKey = defaultAdminKey
 			_ = s.saveLocked()
@@ -204,10 +201,9 @@ func (s *Store) ListInviteCodes() []models.InviteCode {
 }
 
 // RegisterParticipant claims an invite code and registers a new participant
-func (s *Store) RegisterParticipant(code, name, email, wishlist string) (*models.Participant, error) {
+func (s *Store) RegisterParticipant(code, name, wishlist string) (*models.Participant, error) {
 	cleanCode := strings.ToUpper(strings.TrimSpace(code))
 	cleanName := strings.TrimSpace(name)
-	cleanEmail := strings.TrimSpace(email)
 	cleanWishlist := strings.TrimSpace(wishlist)
 
 	if cleanName == "" {
@@ -234,20 +230,18 @@ func (s *Store) RegisterParticipant(code, name, email, wishlist string) (*models
 		if strings.EqualFold(p.Name, cleanName) {
 			return nil, fmt.Errorf("%w: '%s'", ErrNameTaken, cleanName)
 		}
-		if cleanEmail != "" && strings.EqualFold(p.Email, cleanEmail) {
-			return nil, fmt.Errorf("%w: '%s'", ErrEmailTaken, cleanEmail)
-		}
 	}
 
 	pID := GenerateID()
+	sessionToken := GenerateID() + GenerateID() // 64-char crypto session token
+
 	participant := models.Participant{
 		ID:           pID,
 		Name:         cleanName,
-		Email:        cleanEmail,
 		Wishlist:     cleanWishlist,
 		InviteCode:   cleanCode,
+		SessionToken: sessionToken,
 		RegisteredAt: time.Now(),
-		EmailSent:    false,
 	}
 
 	inv.Used = true
@@ -279,6 +273,22 @@ func (s *Store) GetParticipantByCode(code string) (models.Participant, bool) {
 
 	for _, p := range s.state.Participants {
 		if p.InviteCode == cleanCode {
+			return p, true
+		}
+	}
+	return models.Participant{}, false
+}
+
+// GetParticipantBySession finds the participant associated with a session cookie
+func (s *Store) GetParticipantBySession(sessionToken string) (models.Participant, bool) {
+	if sessionToken == "" {
+		return models.Participant{}, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, p := range s.state.Participants {
+		if p.SessionToken == sessionToken {
 			return p, true
 		}
 	}
@@ -346,23 +356,6 @@ func (s *Store) SaveDrawResults(assignments map[string]string) error {
 	return s.saveLocked()
 }
 
-// UpdateParticipantEmailStatus updates email delivery status
-func (s *Store) UpdateParticipantEmailStatus(id string, sent bool, errMsg string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	p, exists := s.state.Participants[id]
-	if !exists {
-		return ErrParticipantNotFound
-	}
-
-	p.EmailSent = sent
-	p.EmailError = errMsg
-	s.state.Participants[id] = p
-
-	return s.saveLocked()
-}
-
 // ResetDraw allows resetting the draw back to registering if needed (admin feature)
 func (s *Store) ResetDraw() error {
 	s.mu.Lock()
@@ -373,8 +366,6 @@ func (s *Store) ResetDraw() error {
 
 	for id, p := range s.state.Participants {
 		p.ReceiverID = ""
-		p.EmailSent = false
-		p.EmailError = ""
 		s.state.Participants[id] = p
 	}
 

@@ -24,13 +24,11 @@ type InviteCode struct {
 type Participant struct {
 	ID           string    `json:"id"`
 	Name         string    `json:"name"`
-	Email        string    `json:"email"`
 	Wishlist     string    `json:"wishlist,omitempty"`
 	InviteCode   string    `json:"invite_code"`
+	SessionToken string    `json:"session_token"` // Used to keep the participant logged in via session cookie
 	RegisteredAt time.Time `json:"registered_at"`
 	ReceiverID   string    `json:"receiver_id,omitempty"` // ID of the person they need to give a gift to
-	EmailSent    bool      `json:"email_sent"`
-	EmailError   string    `json:"email_error,omitempty"`
 }
 
 // Event holds the overall Secret Santa event configuration and state

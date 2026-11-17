@@ -1,29 +1,30 @@
 {{define "content"}}
 {{if not .IsAuthenticated}}
-  <!-- Admin Login Form -->
-  <div class="card" style="max-width: 440px; margin: 40px auto;">
-    <h2 class="card-title">🔒 Organizer Admin Login</h2>
+  <!-- Admin Access Form -->
+  <div class="card" style="max-width: 460px; margin: 40px auto;">
+    <h2 class="card-title">🔒 Organizer Access</h2>
     <p style="color: var(--text-muted); margin-bottom: 20px;">
-      Enter the secret admin passkey to manage participants and roll the Secret Santa draw.
+      Paste your organizer key to manage this event and roll the Secret Santa draw.
     </p>
 
-    <form method="POST" action="/admin/login">
+    <form method="GET" action="/admin">
       <div class="form-group">
-        <label for="admin_key">Admin Passkey</label>
-        <input type="password" id="admin_key" name="admin_key" required autofocus placeholder="Enter your passkey">
+        <label for="key">Organizer Key</label>
+        <input type="text" id="key" name="key" required autofocus placeholder="Paste your organizer key">
+        <div class="hint">Check your server console or original setup URL for your organizer key.</div>
       </div>
-      <button type="submit" class="btn btn-primary" style="width: 100%;">Unlock Admin Dashboard &rarr;</button>
+      <button type="submit" class="btn btn-primary" style="width: 100%;">Access Organizer Dashboard &rarr;</button>
     </form>
   </div>
 {{else}}
   <!-- Authenticated Admin Dashboard -->
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: gap: 12px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
     <div>
       <h2 style="font-size: 1.6rem; font-weight: 800;">Organizer Control Panel</h2>
-      <p style="color: var(--text-muted);">Manage invitations, check registrations, and execute the gift draw.</p>
+      <p style="color: var(--text-muted);">Manage invitations, monitor registrations, and execute the gift draw.</p>
     </div>
     <div>
-      <a href="/admin/logout" class="btn btn-outline btn-sm">Log Out</a>
+      <a href="/admin/logout" class="btn btn-outline btn-sm">Sign Out Organizer</a>
     </div>
   </div>
 
@@ -44,7 +45,7 @@
     <div class="stat-card">
       <div class="stat-value" style="font-size: 1.3rem; margin-top: 8px;">
         {{if eq .Event.Status "drawn"}}
-          <span class="badge badge-success">Drawn & Complete</span>
+          <span class="badge badge-success">Drawn & Active</span>
         {{else}}
           <span class="badge badge-warning">Registration Open</span>
         {{end}}
@@ -69,15 +70,10 @@
         <span>🎉</span>
         <div>
           <strong>The Secret Santa has been rolled!</strong>
-          Assignments are locked. Participants can reveal their match via their personal links or notification emails.
+          Assignments are complete. When participants open this site on their logged-in devices (or click their invite links), their matches will be revealed immediately!
         </div>
       </div>
       <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-        <form method="POST" action="/admin/resend-emails" onsubmit="return confirm('Resend notification emails to all registered participants?');">
-          <button type="submit" class="btn btn-secondary">
-            📧 Resend Match Notification Emails
-          </button>
-        </form>
         <form method="POST" action="/admin/reset-draw" onsubmit="return confirm('WARNING: Are you sure you want to reset the draw? Current gift matches will be cleared and registration will re-open.');">
           <button type="submit" class="btn btn-outline btn-danger">
             🔄 Reset Draw (Re-open Registration)
@@ -90,8 +86,8 @@
       </p>
       <ul style="color: #4b5563; margin-left: 20px; margin-bottom: 20px; line-height: 1.6;">
         <li><strong>No self-matches:</strong> No one can draw their own name.</li>
-        <li><strong>No duplicates:</strong> Every participant gives exactly one gift and receives exactly one gift.</li>
-        <li><strong>Automatic notifications:</strong> Matches are emailed and unlocked on participants' personal links.</li>
+        <li><strong>No duplicate names:</strong> Everyone gives exactly one gift and receives exactly one gift.</li>
+        <li><strong>Instant match unlock:</strong> Participants can simply revisit this site on their browser to unwrap their match.</li>
       </ul>
 
       {{if lt .Stats.ParticipantCount 2}}
@@ -103,7 +99,7 @@
           🎲 Roll Secret Santa (Waiting for participants)
         </button>
       {{else}}
-        <form method="POST" action="/admin/roll" onsubmit="return confirm('Ready to roll the Secret Santa? This will assign recipients to all {{.Stats.ParticipantCount}} participants and trigger notifications.');">
+        <form method="POST" action="/admin/roll" onsubmit="return confirm('Ready to roll the Secret Santa? This will assign recipients to all {{.Stats.ParticipantCount}} participants.');">
           <button type="submit" class="btn btn-primary" style="font-size: 1.15rem; padding: 14px 28px;">
             🎲 Roll Secret Santa Now! ({{.Stats.ParticipantCount}} Participants)
           </button>
@@ -126,7 +122,7 @@
     {{if ne .Event.Status "drawn"}}
       <form method="POST" action="/admin/generate-codes" style="display: flex; gap: 12px; align-items: flex-end; margin-bottom: 24px; flex-wrap: wrap;">
         <div style="flex: 1; min-width: 180px;">
-          <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Number of Unique Invite Codes to Generate:</label>
+          <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Number of Unique Invite Links to Generate:</label>
           <input type="number" name="count" value="5" min="1" max="100" style="margin-top: 4px;">
         </div>
         <button type="submit" class="btn btn-secondary">
@@ -196,11 +192,9 @@
         <thead>
           <tr>
             <th>Name</th>
-            <th>Email</th>
             <th>Wishlist / Hints</th>
             {{if eq .Event.Status "drawn"}}
               <th>Giving Gift To 🎁</th>
-              <th>Notification</th>
             {{else}}
               <th>Action</th>
             {{end}}
@@ -210,22 +204,12 @@
           {{range .Participants}}
             <tr>
               <td><strong>{{.Name}}</strong></td>
-              <td>{{.Email}}</td>
-              <td style="max-width: 250px; font-size: 0.9rem; color: #4b5563;">
+              <td style="max-width: 300px; font-size: 0.9rem; color: #4b5563;">
                 {{if .Wishlist}}{{.Wishlist}}{{else}}<span style="color: #9ca3af;">(none)</span>{{end}}
               </td>
               {{if eq $.Event.Status "drawn"}}
                 <td>
-                  <strong style="color: #15803d;">🎁 {{.ReceiverName}}</strong>
-                </td>
-                <td>
-                  {{if .EmailSent}}
-                    <span class="badge badge-success">Email Sent</span>
-                  {{else if .EmailError}}
-                    <span class="badge badge-danger" title="{{.EmailError}}">Failed</span>
-                  {{else}}
-                    <span class="badge badge-warning">Pending</span>
-                  {{end}}
+                  <strong style="color: #15803d; font-size: 1rem;">🎁 {{.ReceiverName}}</strong>
                 </td>
               {{else}}
                 <td>
@@ -238,7 +222,7 @@
             </tr>
           {{else}}
             <tr>
-              <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">
+              <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;">
                 No participants registered yet. Share the invitation links above!
               </td>
             </tr>

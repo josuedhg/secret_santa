@@ -57,7 +57,7 @@ func setupTestServer(t *testing.T) (*handlers.Server, *storage.Store, *http.Serv
 	return server, store, mux, tmpDir
 }
 
-func TestEndToEndFlow(t *testing.T) {
+func TestEndToEndSessionFlow(t *testing.T) {
 	_, store, mux, tmpDir := setupTestServer(t)
 	defer os.RemoveAll(tmpDir)
 
@@ -70,7 +70,7 @@ func TestEndToEndFlow(t *testing.T) {
 	code2 := codes[1].Code
 	code3 := codes[2].Code
 
-	// 2. Test GET /
+	// 2. Test GET / when not logged in -> shows welcome form
 	req := httptest.NewRequest("GET", "/", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -78,21 +78,9 @@ func TestEndToEndFlow(t *testing.T) {
 		t.Fatalf("expected 200 OK for /, got %d", rec.Code)
 	}
 
-	// 3. Test GET /join/{code1}
-	req = httptest.NewRequest("GET", "/join/"+code1, nil)
-	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK for /join/%s, got %d", code1, rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), code1) {
-		t.Fatalf("expected page to contain code %s", code1)
-	}
-
-	// 4. Register Alice with code1
+	// 3. Register Alice with code1 (no email, no password)
 	form := url.Values{}
 	form.Set("name", "Alice")
-	form.Set("email", "alice@example.com")
 	form.Set("wishlist", "Scented candle")
 
 	req = httptest.NewRequest("POST", "/join/"+code1, strings.NewReader(form.Encode()))
@@ -103,13 +91,34 @@ func TestEndToEndFlow(t *testing.T) {
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303 See Other after register, got %d", rec.Code)
 	}
-	if !strings.Contains(rec.Header().Get("Location"), "/reveal/"+code1) {
-		t.Fatalf("expected redirect to /reveal/%s, got %s", code1, rec.Header().Get("Location"))
+	if !strings.Contains(rec.Header().Get("Location"), "/reveal") {
+		t.Fatalf("expected redirect to /reveal, got %s", rec.Header().Get("Location"))
+	}
+
+	// Verify session cookie was issued
+	cookies := rec.Result().Cookies()
+	var aliceCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == "santa_participant_session" {
+			aliceCookie = c
+			break
+		}
+	}
+	if aliceCookie == nil || aliceCookie.Value == "" {
+		t.Fatal("expected santa_participant_session cookie to be set")
+	}
+
+	// 4. Test visiting / while logged in with aliceCookie -> auto-redirects to /reveal!
+	req = httptest.NewRequest("GET", "/", nil)
+	req.AddCookie(aliceCookie)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/reveal" {
+		t.Fatalf("expected auto-redirect to /reveal for logged in user, got %d to %s", rec.Code, rec.Header().Get("Location"))
 	}
 
 	// 5. Test Rule: Code is single-use - try using code1 again
 	form.Set("name", "Mallory")
-	form.Set("email", "mallory@example.com")
 	req = httptest.NewRequest("POST", "/join/"+code1, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec = httptest.NewRecorder()
@@ -120,8 +129,7 @@ func TestEndToEndFlow(t *testing.T) {
 	}
 
 	// 6. Test Rule: Duplicate names not allowed - try registering "alice" (case-insensitive) with code2
-	form.Set("name", "alice") // lower case match
-	form.Set("email", "another@example.com")
+	form.Set("name", "alice")
 	req = httptest.NewRequest("POST", "/join/"+code2, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec = httptest.NewRecorder()
@@ -133,7 +141,6 @@ func TestEndToEndFlow(t *testing.T) {
 
 	// 7. Register Bob with code2 and Charlie with code3
 	form.Set("name", "Bob")
-	form.Set("email", "bob@example.com")
 	form.Set("wishlist", "Coffee mug")
 	req = httptest.NewRequest("POST", "/join/"+code2, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -144,7 +151,6 @@ func TestEndToEndFlow(t *testing.T) {
 	}
 
 	form.Set("name", "Charlie")
-	form.Set("email", "charlie@example.com")
 	form.Set("wishlist", "Dark chocolate")
 	req = httptest.NewRequest("POST", "/join/"+code3, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -154,31 +160,40 @@ func TestEndToEndFlow(t *testing.T) {
 		t.Fatalf("failed to register Charlie: %d", rec.Code)
 	}
 
-	// 8. Check Alice's status before the draw at /reveal/{code1}
-	req = httptest.NewRequest("GET", "/reveal/"+code1, nil)
+	// 8. Check Alice's status before the draw using her session cookie
+	req = httptest.NewRequest("GET", "/reveal", nil)
+	req.AddCookie(aliceCookie)
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK for reveal, got %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "Waiting for Draw") {
-		t.Fatal("expected Waiting for Draw message before draw")
+	if !strings.Contains(rec.Body.String(), "Draw Pending") {
+		t.Fatal("expected Draw Pending message before draw")
 	}
 
-	// 9. Unauthorized admin roll attempt
-	req = httptest.NewRequest("POST", "/admin/roll", nil)
+	// 9. Admin logs in with key URL parameter /admin?key=test-admin-secret-key
+	req = httptest.NewRequest("GET", "/admin?key=test-admin-secret-key", nil)
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "Unauthorized") {
-		t.Fatalf("expected unauthorized redirect for admin roll without key, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for admin dashboard, got %d", rec.Code)
 	}
 
-	// 10. Authorized admin roll using cookie
+	var adminCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "santa_admin_session" {
+			adminCookie = c
+			break
+		}
+	}
+	if adminCookie == nil || adminCookie.Value == "" {
+		t.Fatal("expected santa_admin_session cookie to be set")
+	}
+
+	// 10. Admin rolls Secret Santa
 	req = httptest.NewRequest("POST", "/admin/roll", nil)
-	req.AddCookie(&http.Cookie{
-		Name:  "admin_auth",
-		Value: "test-admin-secret-key",
-	})
+	req.AddCookie(adminCookie)
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "success") {
@@ -188,15 +203,13 @@ func TestEndToEndFlow(t *testing.T) {
 	// 11. Verify Draw Rules in Database:
 	// - No self matches
 	// - No duplicate recipients
-	// - Everyone gets a gift
+	// - Everyone gives 1 and gets 1 gift
 	participants := store.ListParticipants()
 	if len(participants) != 3 {
 		t.Fatalf("expected 3 participants, got %d", len(participants))
 	}
 
-	givers := make(map[string]string)
 	receivers := make(map[string]bool)
-
 	for _, p := range participants {
 		if p.ReceiverID == "" {
 			t.Fatalf("participant %s has no receiver assigned", p.Name)
@@ -208,15 +221,15 @@ func TestEndToEndFlow(t *testing.T) {
 			t.Fatalf("RULE VIOLATION: duplicate receiver %s!", p.ReceiverID)
 		}
 		receivers[p.ReceiverID] = true
-		givers[p.ID] = p.ReceiverID
 	}
 
 	if len(receivers) != 3 {
 		t.Fatalf("expected 3 distinct receivers, got %d", len(receivers))
 	}
 
-	// 12. Check Alice's status AFTER draw at /reveal/{code1}
-	req = httptest.NewRequest("GET", "/reveal/"+code1, nil)
+	// 12. Check Alice's reveal page AFTER draw using her session cookie
+	req = httptest.NewRequest("GET", "/reveal", nil)
+	req.AddCookie(aliceCookie)
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
