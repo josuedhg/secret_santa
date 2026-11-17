@@ -1,7 +1,19 @@
-# Binaries
+# Binaries and executables
+intercambio
+intercambio.exe
 secret-santa
+secret_santa
 *.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 *.test
+*.out
+
+# Build output directories
+bin/
+dist/
 
 # Local data & databases
 data/
@@ -11,3 +23,5 @@ data/
 .DS_Store
 .idea/
 .vscode/
+*.swp
+*.swo
