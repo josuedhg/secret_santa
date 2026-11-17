@@ -1,22 +1,22 @@
 {{define "content"}}
 <div class="card" style="max-width: 500px; margin: 0 auto 30px auto;">
-  <h2 class="card-title">🎁 Enter Your Invitation Code</h2>
+  <h2 class="card-title">🎁 Ingresa tu Código de Invitación</h2>
   <p style="color: var(--text-muted); margin-bottom: 20px;">
-    Received an invitation code for this Secret Santa? Enter it below to register your name or view your match!
+    ¿Recibiste un enlace o código de invitación para este intercambio? Ingrésalo abajo para registrarte o consultar a quién te toca regalar.
   </p>
 
   <form method="GET" action="/code-redirect">
     <div class="form-group">
-      <label for="code">Invitation Code</label>
-      <input type="text" id="code" name="code" placeholder="e.g. SANTA-ABCD-1234" required autofocus style="text-transform: uppercase;">
-      <div class="hint">Unique single-use code from your invitation link</div>
+      <label for="code">Código de Invitación</label>
+      <input type="text" id="code" name="code" placeholder="ej. REGALO-ABCD-1234" required autofocus style="text-transform: uppercase;">
+      <div class="hint">Código único de un solo uso de tu enlace de invitación</div>
     </div>
 
-    <button type="submit" class="btn btn-primary" style="width: 100%;">Continue to Registration &rarr;</button>
+    <button type="submit" class="btn btn-primary" style="width: 100%;">Continuar al Registro &rarr;</button>
   </form>
 </div>
 
 <div style="text-align: center; margin-top: 16px;">
-  <a href="/admin" class="btn btn-outline btn-sm">🔒 Organizer / Admin Access</a>
+  <a href="/admin" class="btn btn-outline btn-sm">🔒 Acceso del Organizador</a>
 </div>
 {{end}}

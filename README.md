@@ -1,82 +1,87 @@
-# 🎅 Secret Santa Application (Zero Email & Zero Password)
+# 🎁 Aplicación de Intercambio (Sin contraseñas ni correos)
 
-A simple, frictionless Secret Santa web application built with Go. **No passwords and no email accounts are required.** 
+Una aplicación web moderna, sencilla y sin fricción para organizar tu **intercambio de regalos**, construida en Go.
 
-Participants simply open their unique one-time invitation link, enter their name, and a persistent browser session is established. Whenever they return to the website, they stay logged in and can view their match as soon as the organizer rolls the Secret Santa draw!
-
----
-
-## ✨ How It Works (Frictionless Flow)
-
-1. **Organizer creates unique invitation links**:
-   - The organizer accesses `/admin?key=<organizer_key>` (which permanently saves their organizer session on their browser).
-   - Generates unique, single-use invite links (e.g. `http://localhost:8080/join/SANTA-ABCD-1234`).
-   - Copies individual links or clicks **"Copy All Unused Links"** to send to participants via WhatsApp, Slack, Discord, SMS, etc.
-
-2. **Participants join with 1 click & stay logged in**:
-   - The participant opens their link.
-   - Enters their **Name** (duplicate names are prevented) and optional **Wishlist / Gift Hints**.
-   - **No email and no password required.**
-   - A persistent session cookie (`santa_participant_session`) is created for 1 year.
-   - Any time they revisit the website (`/` or `/reveal`) on that browser, it automatically recognizes them!
-
-3. **Organizer rolls the draw**:
-   - When everyone has joined, the organizer clicks **"🎲 Roll Secret Santa Now!"**.
-   - The algorithm executes a single Hamiltonian cycle shuffle:
-     - **Rule 1**: No one gets their own name ($Giver \ne Receiver$).
-     - **Rule 2**: Names cannot be duplicated.
-     - **Rule 3**: Everyone gives exactly 1 gift and receives exactly 1 gift.
-
-4. **Participants unwrap their gift match**:
-   - Participants simply open the website on their phone or computer.
-   - They click the interactive **"🎁 Click to Unwrap Your Match"** gift box card with confetti to reveal their recipient!
+**No requiere contraseñas ni correos electrónicos.** Los participantes simplemente abren su enlace de invitación único de un solo uso, registran su nombre y se inicia una sesión persistente en su navegador. Cuando el organizador realiza el sorteo, cada participante entra a la página y descubre inmediatamente a quién le toca regalar.
 
 ---
 
-## 🚀 Quick Start
+## ✨ Características y Reglas Garantizadas
 
-### Run with Go:
+1. **Enlaces de Invitación de Un Solo Uso**:
+   - El organizador genera enlaces únicos (ej. `http://localhost:8080/join/REGALO-ABCD-1234`).
+   - Cada enlace solo puede ser utilizado **una sola vez**. Al registrarse, el código queda bloqueado para esa persona.
+
+2. **Sesión Persistente Automática (Sin Contraseñas)**:
+   - Al unirse, se guarda una cookie de sesión en el navegador (`intercambio_session`).
+   - El participante puede cerrar la pestaña y volver a entrar en cualquier momento (incluso directo a `/` o `/reveal`) y la app lo reconocerá automáticamente.
+
+3. **Regla 1: Nadie Puede Sacar su Propio Nombre**:
+   - El algoritmo matemático (ciclo hamiltoniano aleatorizado con `crypto/rand`) garantiza que para cualquier participante $i$, $\text{Receptor} \ne \text{Emisor}$.
+
+4. **Regla 2: Nombres No Duplicados**:
+   - La aplicación valida que los nombres no se repitan (insensible a mayúsculas/minúsculas) para evitar confusiones.
+
+5. **Regla 3: Todos Dan y Todos Reciben Exactamente Un Regalo**:
+   - Todos los participantes tienen exactamente un destinatario y son el destinatario de exactamente un participante ($1$ a $1$).
+   - Al formar un ciclo completo ($P_0 \to P_1 \to \dots \to P_{n-1} \to P_0$), se evitan intercambios aislados de solo 2 personas cuando el grupo es de 3 o más.
+
+6. **Revelación Interactiva con Confeti**:
+   - Una vez realizado el sorteo, los participantes ven una tarjeta interactiva con animación de confeti para descubrir a quién le regalan y consultar sus ideas de regalo.
+
+7. **Panel del Organizador**:
+   - Protegido por una clave de organizador (se guarda en sesión con un clic vía `/admin?key=...`).
+   - Botón para copiar todos los enlaces disponibles en un solo clic para enviarlos por WhatsApp o Slack.
+   - Seguimiento en tiempo real de los participantes registrados.
+   - Botón de sorteo seguro con confirmación.
+
+---
+
+## 🚀 Inicio Rápido
+
+### Ejecutar con Go:
 
 ```bash
 cd secret_santa
 go run .
 ```
 
-Or build the standalone single binary:
+O compilar el binario ejecutable independiente:
 
 ```bash
-go build -o secret-santa .
-./secret-santa
+go build -o intercambio .
+./intercambio
 ```
 
-The server displays:
+Al iniciar, la consola muestra:
+
 ```text
 ==================================================================
-🎅 SECRET SANTA APPLICATION (No Passwords & No Emails Required)
+🎁 APLICACIÓN DE INTERCAMBIO (Sin contraseñas ni correos)
 ==================================================================
- Server running at:     http://localhost:8080
- Data stored at:        data/secretsanta.json
- Organizer Key:         SANTA-PASSKEY-XXXX
- Direct Organizer Link: http://localhost:8080/admin?key=SANTA-PASSKEY-XXXX
+ Servidor activo en:        http://localhost:8080
+ Datos guardados en:        data/secretsanta.json
+ Clave del Organizador:     REGALO-PASSKEY-XXXX
+ Enlace directo organizador: http://localhost:8080/admin?key=REGALO-PASSKEY-XXXX
 ==================================================================
 ```
 
 ---
 
-## ⚙️ Configuration & Flags
+## ⚙️ Parámetros y Configuración
 
-| Flag | Environment Variable | Default | Description |
-|------|----------------------|---------|-------------|
-| `-port` | `PORT` | `8080` | HTTP port to listen on |
-| `-base-url` | `BASE_URL` | `http://localhost:8080` | Public base URL used when generating invite links |
-| `-data` | `DATA_PATH` | `data/secretsanta.json` | Path to persistent JSON database file |
-| `-admin-key` | `ADMIN_KEY` | *(Auto-generated)* | Organizer secret key |
+| Parámetro | Variable de Entorno | Valor por Defecto | Descripción |
+|-----------|---------------------|-------------------|-------------|
+| `-port` | `PORT` | `8080` | Puerto HTTP en el que escucha el servidor |
+| `-base-url` | `BASE_URL` | `http://localhost:8080` | URL pública para generar los enlaces de invitación |
+| `-data` | `DATA_PATH` | `data/secretsanta.json` | Ruta del archivo JSON de base de datos persistente |
+| `-admin-key` | `ADMIN_KEY` | *(Auto-generada)* | Clave secreta del organizador |
 
 ---
 
-## 🧪 Testing
+## 🧪 Pruebas Automatizadas
 
-Run all unit tests and end-to-end integration tests:
+Para ejecutar todas las pruebas unitarias y de integración de extremo a extremo:
 
 ```bash
 go test -v ./...

@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	ErrNotEnoughParticipants = errors.New("at least 3 participants are recommended, minimum 2 required")
-	ErrDuplicateNames        = errors.New("cannot draw with duplicate participant names")
-	ErrAlreadyDrawn          = errors.New("event has already been drawn")
+	ErrNotEnoughParticipants = errors.New("se requieren al menos 2 participantes para realizar el intercambio (recomendado 3+)")
+	ErrDuplicateNames        = errors.New("no se puede realizar el sorteo con nombres duplicados")
+	ErrAlreadyDrawn          = errors.New("el intercambio ya ha sido sorteado")
 )
 
 // CryptoRandInt returns a secure random integer in [0, max)
@@ -41,17 +41,17 @@ func ShuffleCrypto[T any](items []T) error {
 	return nil
 }
 
-// PerformDraw assigns each participant a unique receiver following Secret Santa rules:
-// 1. No one receives their own name (no self-assignments).
-// 2. Names cannot be duplicated.
-// 3. Every participant gives exactly one gift and receives exactly one gift (bijective / single Hamiltonian cycle).
+// PerformDraw assigns each participant a unique receiver following the Intercambio rules:
+// 1. Nadie puede autoregalarse (no self-assignments).
+// 2. Los nombres no pueden estar duplicados.
+// 3. Cada persona da exactamente un regalo y recibe exactamente un regalo (ciclo hamiltoniano único).
 func PerformDraw(participants []models.Participant) (map[string]string, error) {
 	n := len(participants)
 	if n < 2 {
 		return nil, ErrNotEnoughParticipants
 	}
 
-	// Rule 2 verification: check for duplicate names (case-insensitive & trimmed)
+	// Regla 2: Comprobar nombres duplicados (insensible a mayúsculas y espacios en blanco)
 	seenNames := make(map[string]bool)
 	for _, p := range participants {
 		cleanName := strings.ToLower(strings.TrimSpace(p.Name))
@@ -61,45 +61,45 @@ func PerformDraw(participants []models.Participant) (map[string]string, error) {
 		seenNames[cleanName] = true
 	}
 
-	// Extract participant IDs
+	// Extraer IDs de los participantes
 	ids := make([]string, n)
 	for i, p := range participants {
 		ids[i] = p.ID
 	}
 
-	// Shuffle participant IDs using crypto/rand
+	// Barajar con crypto/rand
 	shuffled := make([]string, n)
 	copy(shuffled, ids)
 	if err := ShuffleCrypto(shuffled); err != nil {
-		return nil, fmt.Errorf("failed to shuffle participants: %w", err)
+		return nil, fmt.Errorf("error al barajar participantes: %w", err)
 	}
 
-	// Assign along a single Hamiltonian cycle:
+	// Asignación mediante ciclo hamiltoniano:
 	// shuffled[0] -> shuffled[1] -> ... -> shuffled[n-1] -> shuffled[0]
-	// This guarantees:
-	// 1. For all i, receiver != giver (since n >= 2 and (i+1)%n != i)
-	// 2. Every participant is a giver exactly once
-	// 3. Every participant is a receiver exactly once
-	// 4. One unified circle, avoiding isolated 2-cycles when n >= 3
-	assignments := make(map[string]string, n) // giverID -> receiverID
+	// Esto garantiza:
+	// 1. Para todo i, receptor != emisor (ya que n >= 2 y (i+1)%n != i)
+	// 2. Cada participante da exactamente un regalo
+	// 3. Cada participante recibe exactamente un regalo
+	// 4. Se evitan intercambios cerrados de 2 personas cuando n >= 3
+	assignments := make(map[string]string, n)
 	for i := 0; i < n; i++ {
 		giverID := shuffled[i]
 		receiverID := shuffled[(i+1)%n]
 		assignments[giverID] = receiverID
 	}
 
-	// Sanity checks on the resulting assignments
+	// Verificación de integridad
 	receivedCount := make(map[string]int, n)
 	for giverID, receiverID := range assignments {
 		if giverID == receiverID {
-			return nil, fmt.Errorf("self-assignment detected for participant %s", giverID)
+			return nil, fmt.Errorf("se detectó autoasignación para el participante %s", giverID)
 		}
 		receivedCount[receiverID]++
 	}
 
 	for _, id := range ids {
 		if receivedCount[id] != 1 {
-			return nil, fmt.Errorf("participant %s received %d gifts instead of 1", id, receivedCount[id])
+			return nil, fmt.Errorf("el participante %s recibió %d regalos en lugar de 1", id, receivedCount[id])
 		}
 	}
 

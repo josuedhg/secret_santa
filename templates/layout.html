@@ -1,10 +1,10 @@
 {{define "layout"}}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{.Title}} - Secret Santa</title>
+  <title>{{.Title}} - Intercambio</title>
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
@@ -12,12 +12,12 @@
     {{if .CurrentParticipant}}
       <div style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1px solid var(--border); padding: 8px 16px; border-radius: 9999px; margin-bottom: 20px; font-size: 0.9rem;">
         <div>
-          <span>👋 Signed in as:</span>
+          <span>👋 Conectado como:</span>
           <strong style="color: var(--secondary);">{{.CurrentParticipant.Name}}</strong>
         </div>
         <div style="display: flex; gap: 12px; align-items: center;">
-          <a href="/reveal" style="color: var(--primary); font-weight: 600; text-decoration: none;">🎁 My Match</a>
-          <a href="/logout" style="color: var(--text-muted); text-decoration: none; font-size: 0.85rem;">Sign out</a>
+          <a href="/reveal" style="color: var(--primary); font-weight: 600; text-decoration: none;">🎁 Mi Intercambio</a>
+          <a href="/logout" style="color: var(--text-muted); text-decoration: none; font-size: 0.85rem;">Cerrar sesión</a>
         </div>
       </div>
     {{end}}
@@ -46,7 +46,7 @@
   </div>
 
   <footer>
-    <p>Secret Santa Application &bull; Built with Go &bull; Happy Holidays! 🎄</p>
+    <p>Aplicación de Intercambio &bull; Hecho con Go &bull; ¡Felices Fiestas! 🎄</p>
   </footer>
 
   <script src="/static/app.js"></script>

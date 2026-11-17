@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	cookieParticipantSession = "santa_participant_session"
-	cookieAdminSession       = "santa_admin_session"
+	cookieParticipantSession = "intercambio_session"
+	cookieAdminSession       = "intercambio_admin_session"
 	sessionDurationSec       = 86400 * 365 // 1 year
 )
 
@@ -39,7 +39,7 @@ func NewServer(cfg *config.Config, store *storage.Store, tmplFS embed.FS, static
 	for _, page := range pages {
 		t, err := template.ParseFS(tmplFS, "templates/layout.html", "templates/"+page)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse template %s: %w", page, err)
+			return nil, fmt.Errorf("error al analizar plantilla %s: %w", page, err)
 		}
 		templates[page] = t
 	}
@@ -57,7 +57,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// Static assets
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(s.staticFS)))
 
-	// Public Participant Flows
+	// Flujos de participantes
 	mux.HandleFunc("GET /{$}", s.handleHome)
 	mux.HandleFunc("GET /code-redirect", s.handleCodeRedirect)
 	mux.HandleFunc("GET /join/{code}", s.handleJoinPage)
@@ -66,7 +66,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /reveal/{code}", s.handleRevealCode)
 	mux.HandleFunc("GET /logout", s.handleParticipantLogout)
 
-	// Admin Dashboard & Actions
+	// Panel de Control del Organizador
 	mux.HandleFunc("GET /admin", s.handleAdminDashboard)
 	mux.HandleFunc("GET /admin/logout", s.handleAdminLogout)
 	mux.HandleFunc("POST /admin/generate-codes", s.requireAdmin(s.handleAdminGenerateCodes))
@@ -80,15 +80,15 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 func (s *Server) render(w http.ResponseWriter, tmplName string, data any) {
 	tmpl, ok := s.templates[tmplName]
 	if !ok {
-		log.Printf("Template not found: %s", tmplName)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		log.Printf("Plantilla no encontrada: %s", tmplName)
+		http.Error(w, "Error interno del servidor", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	err := tmpl.ExecuteTemplate(w, "layout", data)
 	if err != nil {
-		log.Printf("Template render error (%s): %v", tmplName, err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		log.Printf("Error al renderizar plantilla (%s): %v", tmplName, err)
+		http.Error(w, "Error interno del servidor", http.StatusInternalServerError)
 	}
 }
 
@@ -114,7 +114,6 @@ func (s *Server) setParticipantSession(w http.ResponseWriter, p models.Participa
 
 // handleHome renders welcome/code input page, or redirects to /reveal if already logged in!
 func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
-	// If participant is already logged in, take them straight to their match!
 	if _, ok := s.getParticipantFromSession(r); ok {
 		http.Redirect(w, r, "/reveal", http.StatusSeeOther)
 		return
@@ -122,7 +121,7 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 
 	event := s.store.GetEvent()
 	s.render(w, "index.html", map[string]any{
-		"Title":            "Welcome",
+		"Title":            "Bienvenido",
 		"EventTitle":       event.Title,
 		"EventDescription": event.Description,
 		"Error":            r.URL.Query().Get("error"),
@@ -134,7 +133,7 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCodeRedirect(w http.ResponseWriter, r *http.Request) {
 	code := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("code")))
 	if code == "" {
-		http.Redirect(w, r, "/?error=Please+enter+an+invitation+code", http.StatusSeeOther)
+		http.Redirect(w, r, "/?error=Por+favor+ingresa+un+código+de+invitación", http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/join/"+url.PathEscape(code), http.StatusSeeOther)
@@ -148,15 +147,15 @@ func (s *Server) handleJoinPage(w http.ResponseWriter, r *http.Request) {
 	inv, exists := s.store.GetInviteCode(code)
 	if !exists {
 		s.render(w, "index.html", map[string]any{
-			"Title":            "Invalid Code",
+			"Title":            "Código Inválido",
 			"EventTitle":       event.Title,
 			"EventDescription": event.Description,
-			"Error":            fmt.Sprintf("Invitation code '%s' is not valid. Please check your invitation link.", code),
+			"Error":            fmt.Sprintf("El código de invitación '%s' no es válido. Por favor revisa tu enlace.", code),
 		})
 		return
 	}
 
-	// If the code was already redeemed, restore their session and show reveal!
+	// Si el código ya fue utilizado, restaura la sesión y muestra el intercambio
 	if inv.Used {
 		if p, ok := s.store.GetParticipantByCode(code); ok {
 			s.setParticipantSession(w, p)
@@ -165,13 +164,13 @@ func (s *Server) handleJoinPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If draw already occurred, registration is closed
+	// Si el sorteo ya se realizó, el registro está cerrado
 	if event.Status == models.StatusDrawn {
 		s.render(w, "index.html", map[string]any{
-			"Title":            "Registration Closed",
+			"Title":            "Registro Cerrado",
 			"EventTitle":       event.Title,
 			"EventDescription": event.Description,
-			"Error":            "The Secret Santa draw has already taken place! Registration is now closed.",
+			"Error":            "¡El sorteo del intercambio ya se realizó! El registro se encuentra cerrado.",
 		})
 		return
 	}
@@ -182,7 +181,7 @@ func (s *Server) handleJoinPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "join.html", map[string]any{
-		"Title":              "Register",
+		"Title":              "Registro",
 		"EventTitle":         event.Title,
 		"EventDescription":   event.Description,
 		"Code":               code,
@@ -201,7 +200,7 @@ func (s *Server) handleJoinSubmit(w http.ResponseWriter, r *http.Request) {
 	wishlist := strings.TrimSpace(r.FormValue("wishlist"))
 
 	if name == "" {
-		redirectWithError(w, r, fmt.Sprintf("/join/%s", code), "Name is required", name, wishlist)
+		redirectWithError(w, r, fmt.Sprintf("/join/%s", code), "El nombre es obligatorio", name, wishlist)
 		return
 	}
 
@@ -211,12 +210,12 @@ func (s *Server) handleJoinSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[REGISTERED] Participant %s registered with code %s", participant.Name, code)
+	log.Printf("[REGISTRADO] Participante %s registrado con código %s", participant.Name, code)
 
-	// Automatically establish participant session cookie to keep them logged in!
+	// Inicia sesión automáticamente con la cookie
 	s.setParticipantSession(w, *participant)
 
-	http.Redirect(w, r, "/reveal?success=Welcome+to+Secret+Santa!+You+are+now+logged+in.", http.StatusSeeOther)
+	http.Redirect(w, r, "/reveal?success=¡Bienvenido+al+intercambio!+Tu+sesión+ha+sido+iniciada.", http.StatusSeeOther)
 }
 
 func redirectWithError(w http.ResponseWriter, r *http.Request, targetURL, errMsg, name, wishlist string) {
@@ -235,8 +234,7 @@ func redirectWithError(w http.ResponseWriter, r *http.Request, targetURL, errMsg
 func (s *Server) handleRevealSession(w http.ResponseWriter, r *http.Request) {
 	participant, ok := s.getParticipantFromSession(r)
 	if !ok {
-		// Not logged in, redirect to home
-		http.Redirect(w, r, "/?error=Please+enter+your+invitation+code+to+access+your+match.", http.StatusSeeOther)
+		http.Redirect(w, r, "/?error=Por+favor+ingresa+tu+código+de+invitación+para+consultar+tu+intercambio.", http.StatusSeeOther)
 		return
 	}
 
@@ -254,11 +252,11 @@ func (s *Server) handleRevealCode(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/join/"+url.PathEscape(code), http.StatusSeeOther)
 			return
 		}
-		http.Redirect(w, r, "/?error=No+registration+found+for+this+invitation+code.", http.StatusSeeOther)
+		http.Redirect(w, r, "/?error=No+se+encontró+ningún+registro+para+este+código+de+invitación.", http.StatusSeeOther)
 		return
 	}
 
-	// Keep them logged in on this browser!
+	// Mantener sesión abierta en este navegador
 	s.setParticipantSession(w, participant)
 
 	s.renderParticipantReveal(w, r, participant)
@@ -276,7 +274,7 @@ func (s *Server) renderParticipantReveal(w http.ResponseWriter, r *http.Request,
 	}
 
 	s.render(w, "reveal.html", map[string]any{
-		"Title":              fmt.Sprintf("Secret Santa - %s", participant.Name),
+		"Title":              fmt.Sprintf("Intercambio - %s", participant.Name),
 		"EventTitle":         event.Title,
 		"EventDescription":   event.Description,
 		"Status":             event.Status,
@@ -297,7 +295,7 @@ func (s *Server) handleParticipantLogout(w http.ResponseWriter, r *http.Request)
 		HttpOnly: true,
 		MaxAge:   -1,
 	})
-	http.Redirect(w, r, "/?success=You+have+been+signed+out.", http.StatusSeeOther)
+	http.Redirect(w, r, "/?success=Has+cerrado+sesión+correctamente.", http.StatusSeeOther)
 }
 
 // Admin Authentication Helpers
@@ -307,14 +305,12 @@ func (s *Server) isAdminAuthenticated(r *http.Request) bool {
 		return false
 	}
 
-	// Check URL param ?key=...
 	if key := r.URL.Query().Get("key"); key != "" {
 		if subtle.ConstantTimeCompare([]byte(key), []byte(event.AdminKey)) == 1 {
 			return true
 		}
 	}
 
-	// Check Admin Cookie
 	cookie, err := r.Cookie(cookieAdminSession)
 	if err == nil && cookie.Value != "" {
 		if subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(event.AdminKey)) == 1 {
@@ -328,7 +324,7 @@ func (s *Server) isAdminAuthenticated(r *http.Request) bool {
 func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.isAdminAuthenticated(r) {
-			http.Redirect(w, r, "/admin?error=Organizer+access+required.", http.StatusSeeOther)
+			http.Redirect(w, r, "/admin?error=Se+requiere+acceso+de+organizador.", http.StatusSeeOther)
 			return
 		}
 		next(w, r)
@@ -340,7 +336,6 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	event := s.store.GetEvent()
 	isAuth := s.isAdminAuthenticated(r)
 
-	// If URL had ?key=..., automatically set admin cookie for 1 year so organizer stays logged in!
 	if key := r.URL.Query().Get("key"); key != "" && isAuth {
 		http.SetCookie(w, &http.Cookie{
 			Name:     cookieAdminSession,
@@ -354,7 +349,7 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 
 	if !isAuth {
 		s.render(w, "admin.html", map[string]any{
-			"Title":            "Organizer Access",
+			"Title":            "Acceso del Organizador",
 			"EventTitle":       event.Title,
 			"EventDescription": event.Description,
 			"IsAuthenticated":  false,
@@ -363,7 +358,6 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Gather stats & list of participants and codes
 	participants := s.store.ListParticipants()
 	sort.Slice(participants, func(i, j int) bool {
 		return participants[i].RegisteredAt.Before(participants[j].RegisteredAt)
@@ -381,7 +375,7 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for i, p := range participants {
-		recName := "Not assigned"
+		recName := "Sin asignar"
 		if p.ReceiverID != "" {
 			if rec, ok := pMap[p.ReceiverID]; ok {
 				recName = rec.Name
@@ -423,7 +417,7 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "admin.html", map[string]any{
-		"Title":            "Organizer Dashboard",
+		"Title":            "Panel del Organizador",
 		"EventTitle":       event.Title,
 		"EventDescription": event.Description,
 		"IsAuthenticated":  true,
@@ -449,7 +443,7 @@ func (s *Server) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		MaxAge:   -1,
 	})
-	http.Redirect(w, r, "/admin?success=Organizer+signed+out.", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin?success=Sesión+de+organizador+cerrada.", http.StatusSeeOther)
 }
 
 // handleAdminGenerateCodes generates new invite codes
@@ -465,41 +459,41 @@ func (s *Server) handleAdminGenerateCodes(w http.ResponseWriter, r *http.Request
 
 	newCodes, err := s.store.GenerateInviteCodes(count)
 	if err != nil {
-		http.Redirect(w, r, "/admin?error="+url.QueryEscape("Failed to generate codes: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/admin?error="+url.QueryEscape("Error al generar códigos: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/admin?success=Successfully+generated+%d+new+invitation+links!", len(newCodes)), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/admin?success=¡Se+generaron+con+éxito+%d+enlaces+de+invitación+nuevos!", len(newCodes)), http.StatusSeeOther)
 }
 
-// handleAdminRoll executes the Secret Santa draw!
+// handleAdminRoll executes the draw!
 func (s *Server) handleAdminRoll(w http.ResponseWriter, r *http.Request) {
 	participants := s.store.ListParticipants()
 
 	assignments, err := logic.PerformDraw(participants)
 	if err != nil {
-		http.Redirect(w, r, "/admin?error="+url.QueryEscape("Draw failed: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/admin?error="+url.QueryEscape("Error en el sorteo: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 
 	if err := s.store.SaveDrawResults(assignments); err != nil {
-		http.Redirect(w, r, "/admin?error="+url.QueryEscape("Failed to save draw results: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/admin?error="+url.QueryEscape("Error al guardar los resultados: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 
-	log.Printf("[DRAW COMPLETE] %d participants matched successfully!", len(assignments))
+	log.Printf("[SORTEO REALIZADO] ¡%d participantes asignados con éxito!", len(assignments))
 
-	http.Redirect(w, r, "/admin?success=Secret+Santa+draw+successfully+completed!+Participants+can+now+view+their+matches.", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin?success=¡Sorteo+del+intercambio+realizado+con+éxito!+Los+participantes+ya+pueden+ver+a+quién+les+tocó.", http.StatusSeeOther)
 }
 
 // handleAdminResetDraw resets the draw to allow re-registering or re-drawing
 func (s *Server) handleAdminResetDraw(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.ResetDraw(); err != nil {
-		http.Redirect(w, r, "/admin?error="+url.QueryEscape("Failed to reset draw: "+err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/admin?error="+url.QueryEscape("Error al reiniciar el sorteo: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 
-	http.Redirect(w, r, "/admin?success=Draw+has+been+reset.+Registration+is+re-opened.", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin?success=El+sorteo+ha+sido+reiniciado.+El+registro+está+abierto+nuevamente.", http.StatusSeeOther)
 }
 
 // handleAdminDeleteParticipant removes a participant before the draw
@@ -510,7 +504,7 @@ func (s *Server) handleAdminDeleteParticipant(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	http.Redirect(w, r, "/admin?success=Participant+removed+and+invite+code+restored.", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin?success=Participante+eliminado+y+código+de+invitación+restaurado.", http.StatusSeeOther)
 }
 
 // handleAdminUpdateEvent updates editable event metadata
@@ -524,5 +518,5 @@ func (s *Server) handleAdminUpdateEvent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	http.Redirect(w, r, "/admin?success=Event+settings+updated+successfully!", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin?success=¡Configuración+del+intercambio+actualizada+con+éxito!", http.StatusSeeOther)
 }

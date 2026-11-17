@@ -3,19 +3,19 @@
   {{if eq .Status "registering"}}
     <div style="text-align: center; padding: 20px 0;">
       <div style="font-size: 52px; margin-bottom: 12px;">🎉</div>
-      <h2 style="font-size: 1.8rem; color: var(--secondary); margin-bottom: 8px;">You're in, {{.Participant.Name}}!</h2>
+      <h2 style="font-size: 1.8rem; color: var(--secondary); margin-bottom: 8px;">¡Ya estás registrado, {{.Participant.Name}}!</h2>
       <p style="color: var(--text-muted); font-size: 1.05rem; margin-bottom: 24px;">
-        You are officially registered for the Secret Santa exchange.
+        Tu participación en el intercambio de regalos está confirmada.
       </p>
 
       <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 18px; text-align: left; margin-bottom: 24px;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-          <span style="color: var(--text-muted);">Registered As:</span>
+          <span style="color: var(--text-muted);">Registrado como:</span>
           <strong>{{.Participant.Name}}</strong>
         </div>
         {{if .Participant.Wishlist}}
           <div style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px;">
-            <span style="color: var(--text-muted); font-size: 0.9rem;">Your Wishlist / Hints:</span>
+            <span style="color: var(--text-muted); font-size: 0.9rem;">Tus ideas de regalo:</span>
             <div style="font-style: italic; color: #334155; margin-top: 4px;">"{{.Participant.Wishlist}}"</div>
           </div>
         {{end}}
@@ -24,14 +24,14 @@
       <div class="alert alert-info" style="text-align: left;">
         <span>⏳</span>
         <div>
-          <strong>Draw Pending:</strong>
-          The organizer is still waiting for everyone to register. Once they roll the Secret Santa, simply open this site on this device to see who you got! Your session stays active automatically.
+          <strong>Sorteo pendiente:</strong>
+          El organizador aún está esperando que todos se registren. En cuanto se realice el sorteo, abre nuevamente esta página en este dispositivo para ver a quién te toca regalar. Tu sesión se mantiene activa automáticamente.
         </div>
       </div>
 
       <div style="margin-top: 20px;">
         <button class="btn btn-outline btn-sm" onclick="copyToClipboard(window.location.href, this)">
-          📋 Copy Link to Revisit Anytime
+          📋 Copiar enlace para volver en cualquier momento
         </button>
       </div>
     </div>
@@ -39,27 +39,27 @@
     <!-- Draw is completed -->
     <div class="reveal-wrapper">
       <div style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 600;">
-        Secret Santa Assignment for: {{.Participant.Name}}
+        Asignación del Intercambio para: {{.Participant.Name}}
       </div>
 
       <div id="giftBoxBtn" class="gift-box-container" onclick="unwrapGift()">
         <button class="gift-box-btn">
           <span class="gift-box-icon">🎁</span>
-          <span>Click to Unwrap Your Match!</span>
-          <span style="font-size: 0.85rem; font-weight: normal; opacity: 0.9;">Tap to reveal who you are giving a gift to</span>
+          <span>¡Toca para descubrir a quién le regalas!</span>
+          <span style="font-size: 0.85rem; font-weight: normal; opacity: 0.9;">Descubre a quién te tocó en el intercambio</span>
         </button>
       </div>
 
       <div id="revealResult" class="revealed-content" style="display: none;">
         <div style="font-size: 0.95rem; text-transform: uppercase; letter-spacing: 1.5px; color: #166534; font-weight: 700;">
-          🎅 You are Secret Santa for 🎅
+          🎅 Te toca regalarle a 🎅
         </div>
         <div class="receiver-name">{{.Receiver.Name}}</div>
 
         {{if .Receiver.Wishlist}}
           <div style="background: #ffffff; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; margin: 18px 0; text-align: left;">
             <div style="font-size: 0.85rem; font-weight: 700; color: #166534; margin-bottom: 4px;">
-              🎁 {{.Receiver.Name}}'s Wishlist & Gift Hints:
+              🎁 Ideas de regalo de {{.Receiver.Name}}:
             </div>
             <div style="color: #374151; font-size: 0.95rem;">
               {{.Receiver.Wishlist}}
@@ -69,12 +69,12 @@
 
         {{if .Budget}}
           <div style="font-size: 0.9rem; color: #4b5563; margin-top: 10px;">
-            <strong>Budget limit:</strong> {{.Budget}}
+            <strong>Límite de presupuesto:</strong> {{.Budget}}
           </div>
         {{end}}
 
         <div style="margin-top: 20px; padding: 12px; background: #fef2f2; border-radius: 8px; color: #991b1b; font-size: 0.9rem; font-weight: 600;">
-          🤫 Keep it a secret! Don't let {{.Receiver.Name}} know you drew them!
+          🤫 ¡Es un secreto! ¡No le digas a {{.Receiver.Name}} que te tocó en el intercambio!
         </div>
       </div>
     </div>

@@ -28,25 +28,25 @@ func main() {
 
 	store, err := storage.NewStore(cfg.DataPath, cfg.AdminKey)
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		log.Fatalf("Error al inicializar la base de datos: %v", err)
 	}
 
 	event := store.GetEvent()
 
-	// If no invite codes exist yet, generate 5 initial ones for convenience
+	// Si no hay códigos de invitación, genera 5 iniciales
 	if len(store.ListInviteCodes()) == 0 {
 		_, _ = store.GenerateInviteCodes(5)
 	}
 
-	// Prepare embedded static filesystem
+	// Cargar archivos estáticos embebidos
 	staticSub, err := fs.Sub(staticFS, "static")
 	if err != nil {
-		log.Fatalf("Failed to load static files: %v", err)
+		log.Fatalf("Error al cargar archivos estáticos: %v", err)
 	}
 
 	server, err := handlers.NewServer(cfg, store, templateFS, http.FS(staticSub))
 	if err != nil {
-		log.Fatalf("Failed to initialize server: %v", err)
+		log.Fatalf("Error al inicializar servidor: %v", err)
 	}
 
 	mux := http.NewServeMux()
@@ -60,34 +60,34 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Server startup banner
+	// Mensaje de bienvenida en consola
 	fmt.Println("==================================================================")
-	fmt.Println("🎅 SECRET SANTA APPLICATION (No Passwords & No Emails Required)")
+	fmt.Println("🎁 APLICACIÓN DE INTERCAMBIO (Sin contraseñas ni correos)")
 	fmt.Println("==================================================================")
-	fmt.Printf(" Server running at:     %s\n", cfg.BaseURL)
-	fmt.Printf(" Data stored at:        %s\n", cfg.DataPath)
-	fmt.Printf(" Organizer Key:         %s\n", event.AdminKey)
-	fmt.Printf(" Direct Organizer Link: %s/admin?key=%s\n", cfg.BaseURL, event.AdminKey)
+	fmt.Printf(" Servidor activo en:        %s\n", cfg.BaseURL)
+	fmt.Printf(" Datos guardados en:        %s\n", cfg.DataPath)
+	fmt.Printf(" Clave del Organizador:     %s\n", event.AdminKey)
+	fmt.Printf(" Enlace directo organizador: %s/admin?key=%s\n", cfg.BaseURL, event.AdminKey)
 	fmt.Println("==================================================================")
 
-	// Graceful shutdown handling
+	// Cierre elegante
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+			log.Fatalf("Error en el servidor: %v", err)
 		}
 	}()
 
 	<-stop
-	fmt.Println("\nShutting down server gracefully...")
+	fmt.Println("\nDeteniendo el servidor...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Printf("Server shutdown error: %v", err)
+		log.Printf("Error al detener servidor: %v", err)
 	}
-	fmt.Println("Server stopped. Goodbye! 🎄")
+	fmt.Println("Servidor detenido. ¡Feliz Intercambio! 🎄")
 }

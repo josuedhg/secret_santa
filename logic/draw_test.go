@@ -8,22 +8,22 @@ import (
 )
 
 func TestPerformDraw_Validation(t *testing.T) {
-	// < 2 participants
+	// Menos de 2 participantes
 	_, err := PerformDraw([]models.Participant{
-		{ID: "1", Name: "Alice"},
+		{ID: "1", Name: "Alicia"},
 	})
 	if err == nil {
-		t.Fatal("expected error for 1 participant, got nil")
+		t.Fatal("se esperaba error para 1 participante, pero fue nil")
 	}
 
-	// Duplicate names (case-insensitive)
+	// Nombres duplicados (insensible a mayúsculas)
 	_, err = PerformDraw([]models.Participant{
-		{ID: "1", Name: "Alice"},
-		{ID: "2", Name: "Bob"},
-		{ID: "3", Name: "alice"},
+		{ID: "1", Name: "Alicia"},
+		{ID: "2", Name: "Roberto"},
+		{ID: "3", Name: "alicia"},
 	})
 	if err == nil {
-		t.Fatal("expected error for duplicate names, got nil")
+		t.Fatal("se esperaba error para nombres duplicados, pero fue nil")
 	}
 }
 
@@ -31,40 +31,40 @@ func TestPerformDraw_RulesEnforced(t *testing.T) {
 	testSizes := []int{2, 3, 4, 5, 10, 50}
 
 	for _, size := range testSizes {
-		t.Run(fmt.Sprintf("Size_%d", size), func(t *testing.T) {
+		t.Run(fmt.Sprintf("Tamaño_%d", size), func(t *testing.T) {
 			participants := make([]models.Participant, size)
 			for i := 0; i < size; i++ {
 				participants[i] = models.Participant{
-					ID:   fmt.Sprintf("user-%d", i),
-					Name: fmt.Sprintf("Person %d", i),
+					ID:   fmt.Sprintf("usuario-%d", i),
+					Name: fmt.Sprintf("Persona %d", i),
 				}
 			}
 
-			// Run 100 iterations per size to verify randomness and rule adherence
+			// Probar 100 iteraciones por tamaño
 			for iter := 0; iter < 100; iter++ {
 				assignments, err := PerformDraw(participants)
 				if err != nil {
-					t.Fatalf("unexpected error at iter %d: %v", iter, err)
+					t.Fatalf("error inesperado en iteración %d: %v", iter, err)
 				}
 
 				if len(assignments) != size {
-					t.Fatalf("expected %d assignments, got %d", size, len(assignments))
+					t.Fatalf("se esperaban %d asignaciones, pero se obtuvieron %d", size, len(assignments))
 				}
 
 				receivedCounts := make(map[string]int)
 				for giverID, receiverID := range assignments {
-					// Rule 1: No one can get their own name
+					// Regla 1: Nadie puede sacar su propio nombre
 					if giverID == receiverID {
-						t.Fatalf("rule violation: participant %s got themselves!", giverID)
+						t.Fatalf("violación de regla: ¡el participante %s se autoregaló!", giverID)
 					}
 					receivedCounts[receiverID]++
 				}
 
-				// Rule 3: Every participant receives exactly 1 gift
+				// Regla 3: Todos reciben exactamente 1 regalo
 				for _, p := range participants {
 					count := receivedCounts[p.ID]
 					if count != 1 {
-						t.Fatalf("rule violation: participant %s received %d gifts (expected 1)", p.ID, count)
+						t.Fatalf("violación de regla: el participante %s recibió %d regalos (se esperaba 1)", p.ID, count)
 					}
 				}
 			}

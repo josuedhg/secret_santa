@@ -1,39 +1,39 @@
 {{define "content"}}
 <div class="card" style="max-width: 540px; margin: 0 auto;">
   <div class="card-title">
-    <span>📝 Join Secret Santa</span>
-    <span class="badge badge-success">Code Valid</span>
+    <span>📝 Unirse al Intercambio</span>
+    <span class="badge badge-success">Código Válido</span>
   </div>
 
   <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; margin-bottom: 20px;">
-    <div style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Your Invitation Code:</div>
+    <div style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Tu Código de Invitación:</div>
     <div class="code-pill" style="display: inline-block; font-size: 1.1rem; margin-top: 4px;">{{.Code}}</div>
     {{if .Budget}}
       <div style="margin-top: 8px; font-size: 0.95rem; color: var(--secondary);">
-        <strong>Budget limit:</strong> {{.Budget}}
+        <strong>Límite de presupuesto:</strong> {{.Budget}}
       </div>
     {{end}}
   </div>
 
   <form method="POST" action="/join/{{.Code}}">
     <div class="form-group">
-      <label for="name">Your Name or Nickname <span style="color: var(--primary);">*</span></label>
-      <input type="text" id="name" name="name" placeholder="e.g. Sarah Connor" required autofocus value="{{.FormName}}">
-      <div class="hint">Names cannot be duplicated so everyone knows who you are!</div>
+      <label for="name">Tu Nombre o Apodo <span style="color: var(--primary);">*</span></label>
+      <input type="text" id="name" name="name" placeholder="ej. María González" required autofocus value="{{.FormName}}">
+      <div class="hint">Los nombres no se pueden duplicar para que todos sepan exactamente quién eres.</div>
     </div>
 
     <div class="form-group">
-      <label for="wishlist">Wishlist & Gift Hints <span style="color: var(--text-muted);">(Optional)</span></label>
-      <textarea id="wishlist" name="wishlist" rows="3" placeholder="e.g. Coffee beans, warm socks, cozy mysteries, or plants!">{{.FormWishlist}}</textarea>
-      <div class="hint">Give your Secret Santa some ideas of things you like.</div>
+      <label for="wishlist">Ideas de Regalo y Preferencias <span style="color: var(--text-muted);">(Opcional)</span></label>
+      <textarea id="wishlist" name="wishlist" rows="3" placeholder="ej. Me gusta el café de grano, los calcetines abrigadores, libros de misterio o plantas.">{{.FormWishlist}}</textarea>
+      <div class="hint">Dale una pista a la persona que te regala sobre qué cosas te gustan.</div>
     </div>
 
     <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px; margin-bottom: 20px; font-size: 0.88rem; color: #166534;">
-      🔒 <strong>No password or email needed:</strong> Registering will automatically keep you logged in on this browser so you can check your match anytime!
+      🔒 <strong>Sin contraseñas ni correos:</strong> Al registrarte, tu sesión se iniciará automáticamente en este navegador para que puedas consultar tu intercambio en cualquier momento.
     </div>
 
     <button type="submit" class="btn btn-primary" style="width: 100%; font-size: 1.1rem; padding: 14px;">
-      Join Secret Santa 🎁
+      Entrar al Intercambio 🎁
     </button>
   </form>
 </div>

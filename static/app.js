@@ -1,9 +1,9 @@
-// Copy text to clipboard helper
+// Helper para copiar texto al portapapeles
 function copyToClipboard(text, btnElement) {
   navigator.clipboard.writeText(text).then(() => {
     if (btnElement) {
       const originalText = btnElement.innerHTML;
-      btnElement.innerHTML = "Copied! ✅";
+      btnElement.innerHTML = "¡Copiado! ✅";
       btnElement.disabled = true;
       setTimeout(() => {
         btnElement.innerHTML = originalText;
@@ -11,12 +11,12 @@ function copyToClipboard(text, btnElement) {
       }, 2000);
     }
   }).catch(err => {
-    console.error("Failed to copy:", err);
-    alert("Could not copy automatically. Link: " + text);
+    console.error("Error al copiar:", err);
+    alert("No se pudo copiar automáticamente. Enlace: " + text);
   });
 }
 
-// Copy all unused invite links to clipboard for bulk sharing
+// Copiar todos los enlaces disponibles al portapapeles para compartirlos
 function copyAllUnusedLinks(selector) {
   const elements = document.querySelectorAll(selector);
   const links = [];
@@ -26,19 +26,19 @@ function copyAllUnusedLinks(selector) {
   });
 
   if (links.length === 0) {
-    alert("No unused links available to copy!");
+    alert("¡No hay enlaces disponibles para copiar!");
     return;
   }
 
   const combined = links.join("\n");
   navigator.clipboard.writeText(combined).then(() => {
-    alert(`Copied ${links.length} invite links to your clipboard!`);
+    alert(`¡Se copiaron ${links.length} enlaces de invitación al portapapeles!`);
   }).catch(err => {
-    console.error("Failed to copy:", err);
+    console.error("Error al copiar:", err);
   });
 }
 
-// Interactive Gift Box Reveal
+// Experiencia interactiva para descubrir a quién le regalas
 function unwrapGift() {
   const boxBtn = document.getElementById("giftBoxBtn");
   const revealResult = document.getElementById("revealResult");
@@ -54,7 +54,7 @@ function unwrapGift() {
   }
 }
 
-// Lightweight holiday confetti effect using pure canvas
+// Animación festiva de confeti con canvas nativo
 function triggerHolidayConfetti() {
   const canvas = document.createElement("canvas");
   canvas.id = "confetti-canvas";

@@ -17,13 +17,13 @@ import (
 )
 
 var (
-	ErrCodeNotFound       = errors.New("invitation code not found")
-	ErrCodeAlreadyUsed     = errors.New("this invitation code has already been used")
-	ErrRegistrationClosed = errors.New("registration is closed because the draw has already occurred")
-	ErrNameRequired       = errors.New("name cannot be empty")
-	ErrNameTaken          = errors.New("this name is already taken by another participant")
-	ErrParticipantNotFound = errors.New("participant not found")
-	ErrCannotDeleteDrawn   = errors.New("cannot remove participants after the draw has been completed")
+	ErrCodeNotFound        = errors.New("código de invitación no encontrado")
+	ErrCodeAlreadyUsed      = errors.New("este código de invitación ya ha sido utilizado")
+	ErrRegistrationClosed  = errors.New("el registro está cerrado porque el sorteo ya se realizó")
+	ErrNameRequired        = errors.New("el nombre no puede estar vacío")
+	ErrNameTaken           = errors.New("este nombre ya ha sido registrado por otro participante")
+	ErrParticipantNotFound  = errors.New("participante no encontrado")
+	ErrCannotDeleteDrawn    = errors.New("no se pueden eliminar participantes después de realizado el sorteo")
 )
 
 type Store struct {
@@ -61,8 +61,8 @@ func NewStore(filePath string, defaultAdminKey string) (*Store, error) {
 		state: models.AppState{
 			Event: models.Event{
 				ID:          GenerateID(),
-				Title:       "Secret Santa 🎁",
-				Description: "Welcome to our holiday Secret Santa gift exchange!",
+				Title:       "Intercambio de Regalos 🎁",
+				Description: "¡Bienvenidos a nuestro intercambio navideño!",
 				Budget:      "$25 - $30",
 				Status:      models.StatusRegistering,
 				CreatedAt:   time.Now(),
@@ -74,7 +74,7 @@ func NewStore(filePath string, defaultAdminKey string) (*Store, error) {
 	}
 
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-		return nil, fmt.Errorf("failed to create data dir: %w", err)
+		return nil, fmt.Errorf("error al crear el directorio de datos: %w", err)
 	}
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
@@ -82,15 +82,15 @@ func NewStore(filePath string, defaultAdminKey string) (*Store, error) {
 			s.state.Event.AdminKey = GenerateRandomString(12)
 		}
 		if err := s.saveLocked(); err != nil {
-			return nil, fmt.Errorf("failed to initialize store: %w", err)
+			return nil, fmt.Errorf("error al inicializar el almacenamiento: %w", err)
 		}
 	} else {
 		data, err := os.ReadFile(filePath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read store file: %w", err)
+			return nil, fmt.Errorf("error al leer el archivo de datos: %w", err)
 		}
 		if err := json.Unmarshal(data, &s.state); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal state: %w", err)
+			return nil, fmt.Errorf("error al deserializar el estado: %w", err)
 		}
 		if s.state.InviteCodes == nil {
 			s.state.InviteCodes = make(map[string]models.InviteCode)
@@ -110,16 +110,16 @@ func NewStore(filePath string, defaultAdminKey string) (*Store, error) {
 func (s *Store) saveLocked() error {
 	data, err := json.MarshalIndent(s.state, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal state: %w", err)
+		return fmt.Errorf("error al formatear estado: %w", err)
 	}
 
 	tmpFile := s.filePath + ".tmp"
 	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
-		return fmt.Errorf("failed to write tmp state file: %w", err)
+		return fmt.Errorf("error al escribir archivo temporal: %w", err)
 	}
 
 	if err := os.Rename(tmpFile, s.filePath); err != nil {
-		return fmt.Errorf("failed to commit state file: %w", err)
+		return fmt.Errorf("error al confirmar archivo de estado: %w", err)
 	}
 
 	return nil
@@ -157,7 +157,7 @@ func (s *Store) GenerateInviteCodes(count int) ([]models.InviteCode, error) {
 	for i := 0; i < count; i++ {
 		var code string
 		for {
-			code = "SANTA-" + GenerateRandomString(4) + "-" + GenerateRandomString(4)
+			code = "REGALO-" + GenerateRandomString(4) + "-" + GenerateRandomString(4)
 			if _, exists := s.state.InviteCodes[code]; !exists {
 				break
 			}
@@ -225,7 +225,7 @@ func (s *Store) RegisterParticipant(code, name, wishlist string) (*models.Partic
 		return nil, ErrCodeAlreadyUsed
 	}
 
-	// Check Rule 2: Names cannot be duplicated (case-insensitive check)
+	// Regla: No se permiten nombres duplicados (comparación insensible a mayúsculas)
 	for _, p := range s.state.Participants {
 		if strings.EqualFold(p.Name, cleanName) {
 			return nil, fmt.Errorf("%w: '%s'", ErrNameTaken, cleanName)
@@ -233,7 +233,7 @@ func (s *Store) RegisterParticipant(code, name, wishlist string) (*models.Partic
 	}
 
 	pID := GenerateID()
-	sessionToken := GenerateID() + GenerateID() // 64-char crypto session token
+	sessionToken := GenerateID() + GenerateID()
 
 	participant := models.Participant{
 		ID:           pID,
@@ -321,7 +321,7 @@ func (s *Store) DeleteParticipant(id string) error {
 		return ErrParticipantNotFound
 	}
 
-	// Free the invite code
+	// Liberar el código de invitación
 	if inv, ok := s.state.InviteCodes[p.InviteCode]; ok {
 		inv.Used = false
 		inv.ParticipantID = ""
